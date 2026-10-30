@@ -164,7 +164,7 @@ LABELS = {
     "von_kd": ["von kinh doanh"],
     "nganh": ["nganh nghe kinh doanh", "nganh, nghe kinh doanh"],
     "bang_chu": ["bang chu"],
-    "ho_ten": ["ho va ten", "ho ten"],
+    "ho_ten": ["ho va ten", "ho ten", "ho va ten dai dien ho kinh doanh"],
     "gioi_tinh": ["gioi tinh"],
     "chuc_danh": ["chuc danh"],
     "ngay_sinh": ["sinh ngay", "ngay sinh"],
@@ -173,7 +173,7 @@ LABELS = {
     "loai_giay_to": ["loai giay to phap ly cua ca nhan", "loai giay to chung thuc ca nhan",
                      "loai giay to"],
     "so_giay_to": ["so giay to phap ly cua ca nhan", "so giay to chung thuc ca nhan",
-                   "so giay to", "so cmnd", "so can cuoc cong dan",
+                   "so giay to", "so cmnd", "so can cuoc cong dan", "chung minh nhan dan so",
                    "so can cuoc cong dan/chung minh nhan dan", "so giay chung thuc ca nhan"],
     "ngay_cap": ["ngay cap"],
     "noi_cap": ["noi cap"],
@@ -659,7 +659,7 @@ def household_members(tables):
 def extract_hkd(lines, tables):
     fs = fields(lines)
     n = [norm(l) for l in lines]
-    title = next((i for i, l in enumerate(n) if "giay chung nhan dang ky ho kinh doanh" in l), 0)
+    title = hkd_title(n) or 0
     head = list(zip(n[:title + 1], lines))
     ubnd = phong = None
     for l, r in head:
@@ -688,7 +688,8 @@ def extract_hkd(lines, tables):
         return to_date(first(fs, label)) or next(
             (to_date(l) for l, k in zip(lines, n) if LABELS[label][0] in k), None)
 
-    owner_lo = next((i for i, l in enumerate(n) if SECTION.match(lines[i]) and "chu ho" in l), None)
+    owner_lo = next((i for i, l in enumerate(n) if SECTION.match(lines[i])
+                     and ("chu ho" in l or "dai dien ho kinh doanh" in l)), None)
     owner_hi = next((i for i, l in enumerate(n) if owner_lo is not None and i > owner_lo
                      and SECTION.match(lines[i])), len(lines))
     owners = people(fs, owner_lo, owner_hi) if owner_lo is not None else people(fs, 0, len(lines))
@@ -721,11 +722,23 @@ def extract_hkd(lines, tables):
 def hkd_name(s):
     """'HQ KINH DOANH ...' (OCR đọc sai 'HỘ') -> 'HỘ KINH DOANH ...'."""
     s = text(upper_if_mostly(s), "company")
+    s = s.rstrip(" .") if s else s
     return re.sub(r"^H\S{0,2}\s+KINH DOANH\b", "HỘ KINH DOANH", s, flags=re.I) if s else None
 
 
+def hkd_title(n):
+    """Chỉ số dòng tiêu đề GCN hộ kinh doanh; tiêu đề có thể bị OCR tách 2 dòng
+    ('GIẤY CHỨNG NHẬN ĐĂNG KÝ' / 'HỘ KINH DOANH'). Không thấy -> None."""
+    for i, l in enumerate(n[:15]):
+        if "dang ky ho kinh doanh" in l:
+            return i
+        if l.endswith("dang ky") and i + 1 < len(n) and n[i + 1].startswith("ho kinh doanh"):
+            return i + 1
+    return None
+
+
 def is_hkd(lines):
-    return any("dang ky ho kinh doanh" in norm(l) for l in lines[:15])
+    return hkd_title([norm(l) for l in lines]) is not None
 
 
 def conform(data, tpl):
