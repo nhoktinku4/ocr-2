@@ -55,7 +55,8 @@ def _ocr_crop(crop, engine, *, prompt=None):
     return text
 
 
-def run_flow(source, output=None, template=None, *, engine_factory=None, save_artifacts=True):
+def run_flow(source, output=None, template=None, *, engine_factory=None, save_artifacts=True,
+             refine_text=True):
     """OCR mọi trang rồi trích xuất toàn tài liệu theo mẫu JSON được chọn."""
     started = time.perf_counter()
     source = Path(source).expanduser().resolve()
@@ -90,7 +91,8 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
             with redirect_stdout(sys.stderr):
                 report = process_single_image(page_image, name, output, detector=detector,
                                               save=save_artifacts, include_crops=not save_artifacts,
-                                              largest_boxes=largest_boxes, padding=50)
+                                              largest_boxes=largest_boxes, padding=50,
+                                              refine_text=refine_text)
             detect_seconds = round(time.perf_counter() - page_started, 3)
             # Chỉ đọc các vùng vừa phát hiện trong report, bỏ qua crop cũ trên đĩa.
             regions = []
@@ -196,9 +198,11 @@ def main():
                         help="Thư mục lưu block và OCR (mặc định: output_flow/<tên file>)")
     parser.add_argument("--template", type=Path,
                         help="Chọn mẫu JSON thủ công (mặc định: tự nhận diện từ OCR)")
+    parser.add_argument("--no-heron-text", dest="refine_text", action="store_false",
+                        help="Không dùng heron tách vùng chữ; OCR trực tiếp box contour (nhanh hơn)")
     args = parser.parse_args()
     try:
-        run_flow(args.source, args.output_dir, args.template)
+        run_flow(args.source, args.output_dir, args.template, refine_text=args.refine_text)
     except (OSError, ValueError, RuntimeError, ImportError) as exc:
         print(f"Lỗi: {exc}", file=sys.stderr)
         return 1

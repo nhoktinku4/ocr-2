@@ -31,6 +31,7 @@ def ocr(
     template: Annotated[
         Literal["auto", "doanh_nghiep", "ho_kinh_doanh"], Form()
     ] = "auto",
+    heron_text: Annotated[bool, Form()] = True,
 ):
     """Trả trực tiếp JSON trích xuất; không lưu ảnh hoặc kết quả OCR."""
     filename = Path((file.filename or "").replace("\\", "/")).name
@@ -54,7 +55,7 @@ def ocr(
             if not size:
                 raise HTTPException(400, "File tải lên rỗng.")
             result = run_flow(source, Path(directory) / "output", template_path,
-                              save_artifacts=False)
+                              save_artifacts=False, refine_text=heron_text)
         return JSONResponse(result["extracted"], headers={
             "Content-Disposition": 'attachment; filename="extract.json"',
         })

@@ -13,7 +13,7 @@ from qwen_ocr import QwenOCR
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 
-def run_batch(data_dir, output_dir, template=None):
+def run_batch(data_dir, output_dir, template=None, refine_text=True):
     data_dir = Path(data_dir).expanduser().resolve()
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -38,7 +38,7 @@ def run_batch(data_dir, output_dir, template=None):
         doc = {"file": str(relative), "status": "ok", "error": None, "pages": []}
         try:
             result = run_flow(source, output_dir / relative.with_suffix(""), template,
-                              engine_factory=engine_factory)
+                              engine_factory=engine_factory, refine_text=refine_text)
             doc["pages"] = [{"page": p["page"], "seconds": p["seconds"]} for p in result["pages"]]
         except Exception as exc:  # noqa: BLE001 - ghi lỗi rồi chạy tiếp file khác
             doc.update(status="error", error=f"{type(exc).__name__}: {exc}")
@@ -79,8 +79,10 @@ def main():
     parser.add_argument("data_dir", type=Path, nargs="?", default=DEFAULT_DATA_DIR)
     parser.add_argument("-o", "--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR / "batch")
     parser.add_argument("--template", type=Path, help="Mẫu JSON thủ công (mặc định: tự nhận diện)")
+    parser.add_argument("--no-heron-text", dest="refine_text", action="store_false",
+                        help="Không dùng heron tách vùng chữ; OCR trực tiếp box contour (nhanh hơn)")
     args = parser.parse_args()
-    run_batch(args.data_dir, args.output_dir, args.template)
+    run_batch(args.data_dir, args.output_dir, args.template, args.refine_text)
     return 0
 
 
