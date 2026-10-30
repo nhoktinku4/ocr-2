@@ -624,7 +624,8 @@ def main_business(lines, tables):
         for j, l in enumerate(rest):
             if j and (SECTION.match(l) or is_label(l)):
                 break
-            if l.strip() and not norm(l).startswith("chi tiet"):
+            # bỏ dòng ghi chú '(Ngành nghề kinh doanh có điều kiện ...)'
+            if l.strip() and not norm(l).startswith(("chi tiet", "(")):
                 cands.append((bool(re.search(r"\(\s*chinh\s*\)", norm(l))), l, l))
     main = [c for c in cands if c[0]] or (cands if len(cands) == 1 else [])
     if not main:
@@ -704,7 +705,12 @@ def extract_hkd(lines, tables):
     owner_hi = next((i for i, l in enumerate(n) if owner_lo is not None and i > owner_lo
                      and SECTION.match(lines[i])), len(lines))
     owners = people(fs, owner_lo, owner_hi) if owner_lo is not None else people(fs, 0, len(lines))
-    chu = person(owners[0], True) if owners else {}
+    # Chủ hộ chỉ có một người; OCR có thể lặp nhãn 'Họ và tên' giữa mục -> gộp phần tiếp theo.
+    owner = dict(owners[0]) if owners else {}
+    for extra in owners[1:]:
+        for key, value in extra.items():
+            owner.setdefault(key, value)
+    chu = person(owner, True) if owner else {}
     chu.pop("chuc_danh", None)
 
     von = first(fs, "von_kd") or section_text(lines, "von kinh doanh")
@@ -741,9 +747,10 @@ def hkd_title(n):
     """Chỉ số dòng tiêu đề GCN hộ kinh doanh; tiêu đề có thể bị OCR tách 2 dòng
     ('GIẤY CHỨNG NHẬN ĐĂNG KÝ' / 'HỘ KINH DOANH'). Không thấy -> None."""
     for i, l in enumerate(n[:15]):
-        if "dang ky ho kinh doanh" in l:
+        # OCR hay đọc sai 'HỘ' thành 'HỢP', 'HO', 'HQ'...
+        if re.search(r"dang ky h\w{0,3} kinh doanh", l):
             return i
-        if l.endswith("dang ky") and i + 1 < len(n) and n[i + 1].startswith("ho kinh doanh"):
+        if l.endswith("dang ky") and i + 1 < len(n) and re.match(r"h\w{0,3} kinh doanh", n[i + 1]):
             return i + 1
     return None
 

@@ -27,7 +27,7 @@ def _get(data, path):
 def missing_fields(data):
     kind = next((key for key in REQUIRED if key in data), None)
     missing = ['.'.join(path) for path in REQUIRED.get(kind, ()) if _empty(_get(data, path))]
-    people = data.get('thanh_vien', []) + data.get('nguoi_dai_dien', [])
+    people = (data.get('thanh_vien') or []) + (data.get('nguoi_dai_dien') or [])
     if 'nguoi_dai_dien' in data and not any(not _empty(p.get('ho_ten')) for p in people):
         missing.append('thanh_vien/nguoi_dai_dien')
     return missing
@@ -46,6 +46,8 @@ def _identity(person):
 
 def fill_missing(existing, recovered):
     """Điền dữ liệu trống, giữ nguyên giá trị đã đọc được từ các vùng."""
+    if recovered is None:
+        return existing
     if _empty(existing):
         return recovered
     if isinstance(existing, dict) and isinstance(recovered, dict):
@@ -79,7 +81,11 @@ def adaptive_extract(read_pages, extract, read_full_pages):
     pages = read_full_pages()
     text = '\n\n'.join(page['text'] for page in pages) + '\n'
     recovered = extract(text)
-    data = recovered if data is None else fill_missing(data, recovered)
+    # Hai lần đọc nhận ra loại giấy khác nhau thì tin toàn trang (đủ ngữ cảnh hơn).
+    if data is None or data.get('loai_giay_to') != recovered.get('loai_giay_to'):
+        data = recovered
+    else:
+        data = fill_missing(data, recovered)
     remaining = missing_fields(data)
     if remaining:
         print('Sau OCR toàn trang vẫn còn trống: ' + ', '.join(remaining), file=sys.stderr)
