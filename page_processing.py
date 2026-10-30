@@ -8,7 +8,7 @@ from pathlib import Path
 import cv2
 
 from box_detection import _text_regions
-from ocr_image_preparation import clean_image, resize_large_image
+from ocr_image_preparation import clean_image, prepare_page, resize_large_image
 from table_detection import (LAYOUT_MODEL, PADDING, TABLE_PADDING, detect_table_regions,
                              load_detector, refine_text_blocks)
 
@@ -70,7 +70,8 @@ def process_single_image(image_bgr, stem_name, output_dir,
     timings = {}
     timed = _timer(timings)
     resized = timed("resize_ms", resize_large_image, image_bgr)
-    cleaned = timed("clean_ms", clean_image, resized, padding=padding)
+    prepared, skew_angle = timed("prepare_ms", prepare_page, resized)
+    cleaned = timed("clean_ms", clean_image, prepared, padding=padding)
     detected_count, table_blocks = timed(
         "table_detect_ms", detect_table_regions, cleaned, detector, padding=table_padding,
         iou_threshold=iou_threshold, conf=conf,
@@ -101,7 +102,7 @@ def process_single_image(image_bgr, stem_name, output_dir,
           + (f" Kết quả: {output}" if save else ""))
     report = _build_report(
         stem_name, image_bgr, cleaned, timings, blocks,
-        coordinate_space="cleaned", box_format="xyxy", detected_box_count=detected_count,
+        coordinate_space="cleaned", box_format="xyxy", skew_angle=skew_angle, detected_box_count=detected_count,
         table_block_count=len(table_blocks), table_blocks=table_blocks,
     )
     if save:
