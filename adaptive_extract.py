@@ -4,10 +4,11 @@ import sys
 
 # Trường bắt buộc theo từng loại giấy; đường dẫn là các khóa lồng nhau.
 REQUIRED = {
-    'ma_so_doanh_nghiep': (('ma_so_doanh_nghiep',), ('ten_cong_ty', 'tieng_viet'),
-                           ('tru_so_chinh', 'dia_chi'), ('von_dieu_le',)),
-    'ma_so_ho_kinh_doanh': (('ten_ho_kinh_doanh',), ('dia_diem_kinh_doanh', 'dia_chi'),
-                            ('chu_ho', 'ho_ten')),
+    'ma_so_doanh_nghiep': (('ma_so_doanh_nghiep',), ('dang_ky_lan_dau',),
+                           ('ten_cong_ty', 'tieng_viet'), ('tru_so_chinh', 'dia_chi'),
+                           ('von_dieu_le',)),
+    'ma_so_ho_kinh_doanh': (('ten_ho_kinh_doanh',), ('dang_ky_lan_dau',),
+                            ('dia_diem_kinh_doanh', 'dia_chi'), ('chu_ho', 'ho_ten')),
 }
 
 
