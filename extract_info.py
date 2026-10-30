@@ -454,6 +454,13 @@ NATIONS = {norm(n): n for n in ("Việt Nam", "Trung Quốc", "Hàn Quốc", "Nh
                                 "Singapore", "Hoa Kỳ", "Mỹ", "Pháp", "Đức", "Anh", "Úc")}
 
 
+def is_name(c):
+    """Ô họ tên: in hoa, không số, không dấu phẩy, ngắn. Xét trước địa chỉ vì tên riêng
+    có thể trùng từ địa chỉ ('PHAN THỊ BÍCH PHƯƠNG' chứa 'phuong')."""
+    return (c.upper() == c and not re.search(r"[\d,]", c)
+            and 2 <= len(c.split()) <= 6 and norm(c) not in NATIONS)
+
+
 def table_members(tables):
     """Bảng thành viên / cổ đông: nhận cột theo nội dung (tiêu đề OCR hay lệch ô)."""
     members, cont = [], False
@@ -484,6 +491,8 @@ def table_members(tables):
                     m["so_giay_to"] = c.replace(" ", "")
                 elif to_percent(c) is not None and "ty_le" not in m:
                     m["ty_le"] = to_percent(c)
+                elif "ho_ten" not in m and is_name(c):
+                    m["ho_ten"] = c
                 elif (re.search(r"\d", c) or ADDR_RE.search(norm(c))) and "dia_chi" not in m:
                     m["dia_chi"] = place(c)
                 elif "ho_ten" not in m and c.upper() == c:
@@ -647,6 +656,8 @@ def household_members(tables):
                     m["quoc_tich"] = NATIONS[norm(c)]
                 elif ID_RE.match(c.replace(" ", "")) and "so_giay_to" not in m:
                     m["so_giay_to"] = c.replace(" ", "")
+                elif "ho_ten" not in m and is_name(c):
+                    m["ho_ten"] = c
                 elif (re.search(r"\d", c) or ADDR_RE.search(norm(c))) and "dia_chi" not in m:
                     m["dia_chi"] = place(c)
                 elif "ho_ten" not in m and c.upper() == c:
