@@ -36,6 +36,19 @@ def _build_report(name, original, cleaned, timings, blocks, *, table_blocks=None
     return report
 
 
+def draw_boxes(image, text_blocks, table_blocks):
+    """Vẽ box lên bản sao ảnh: vùng chữ xanh dương, bảng xanh lá, kèm số thứ tự."""
+    canvas = image.copy()
+    thickness = max(2, round(max(canvas.shape[:2]) / 600))
+    for regions, color, prefix in ((text_blocks, (255, 0, 0), "T"), (table_blocks, (0, 180, 0), "B")):
+        for block in regions:
+            x1, y1, x2, y2 = block["box"]
+            cv2.rectangle(canvas, (x1, y1), (x2, y2), color, thickness)
+            cv2.putText(canvas, f"{prefix}{block['order']}", (x1 + 4, max(y1 - 6, 20)),
+                        cv2.FONT_HERSHEY_SIMPLEX, thickness * 0.4, color, thickness)
+    return canvas
+
+
 def process_single_image(image_bgr, stem_name, output_dir,
                          crop_blocks=True, padding=PADDING, save=False, largest_boxes=None,
                          *, detector=None, model_path=LAYOUT_MODEL, iou_threshold=0.1,
@@ -68,6 +81,9 @@ def process_single_image(image_bgr, stem_name, output_dir,
     blocks = blocks or []
     if save:
         output.mkdir(parents=True, exist_ok=True)
+        preview = output / "boxes.png"
+        if not cv2.imwrite(str(preview), draw_boxes(cleaned, blocks, table_blocks)):
+            raise OSError(f"Không thể lưu ảnh: {preview}")
         if crop_blocks:
             for folder, prefix, regions in (("crops", "block", blocks), ("tables", "table", table_blocks)):
                 if folder == "tables" and not regions:
