@@ -11,8 +11,7 @@ from PIL import Image
 
 from adaptive_extract import adaptive_extract
 import cv2
-from document_classification import classify_document
-from extract import extract, template_schema
+from extract_info import extract_text, load_templates
 from image_io import iter_images
 from ocr_image_preparation import enhance_ocr_crop
 from page_processing import process_single_image
@@ -21,7 +20,6 @@ from table_detection import load_detector
 
 
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "output_flow"
-DEFAULT_TEMPLATE = Path(__file__).resolve().parent / "json" / "doanh_nghiep.json"
 OCR_MAX_TIME_SECONDS = 120.0
 OCR_MAX_NEW_TOKENS = 2048
 SUPPORTED_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
@@ -49,14 +47,19 @@ def _ocr_crop(crop, engine, *, prompt=None):
 
 def run_flow(source, output=None, template=None, *, engine_factory=None, save_artifacts=True):
     """OCR mọi trang rồi trích xuất toàn tài liệu theo mẫu JSON được chọn."""
+    started = time.perf_counter()
     source = Path(source).expanduser().resolve()
     if not source.is_file() or source.suffix.lower() not in SUPPORTED_SUFFIXES:
         raise ValueError("Đầu vào phải là file PDF hoặc ảnh.")
-    extraction_template = None
+    templates, kind = load_templates(), None
     if template is not None:
+        # Mẫu chọn thủ công quyết định luôn loại giấy, không tự nhận diện.
         template_path = Path(template).expanduser().resolve()
         extraction_template = json.loads(template_path.read_text(encoding="utf-8"))
-        template_schema(extraction_template)
+        if not isinstance(extraction_template, dict):
+            raise ValueError("Mẫu JSON phải là object.")
+        kind = "hkd" if "ma_so_ho_kinh_doanh" in extraction_template else "dn"
+        templates[kind] = extraction_template
     output = (Path(output).expanduser().resolve() if output else
               DEFAULT_OUTPUT_DIR / source.stem)
     if save_artifacts:
@@ -64,7 +67,9 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
         print(f"Kết quả: {output}", file=sys.stderr)
 
     engine_factory = QwenOCR if engine_factory is None else engine_factory
+    detector_started = time.perf_counter()
     detector = load_detector()
+    timings = {"load_detector_seconds": round(time.perf_counter() - detector_started, 3)}
     ocr_engine, cache = None, {}
 
     def read_pages(largest_boxes):
@@ -76,6 +81,7 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
                 report = process_single_image(page_image, name, output, detector=detector,
                                               save=save_artifacts, include_crops=not save_artifacts,
                                               largest_boxes=largest_boxes, padding=50)
+            detect_seconds = round(time.perf_counter() - page_started, 3)
             texts = []
             # Chỉ đọc các vùng vừa phát hiện trong report, bỏ qua crop cũ trên đĩa.
             regions = []
@@ -104,8 +110,10 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
                 elif save_artifacts:
                     crop.with_suffix(".ocr.txt").write_text(cache[cache_key], encoding="utf-8")
                 texts.append(cache[cache_key])
-            pages.append({"page": page, "text": "\n\n".join(texts),
-                          "seconds": round(time.perf_counter() - page_started, 3)})
+            seconds = round(time.perf_counter() - page_started, 3)
+            pages.append({"page": page, "text": "\n\n".join(texts), "seconds": seconds,
+                          "detect_seconds": detect_seconds,
+                          "ocr_seconds": round(seconds - detect_seconds, 3)})
         return pages
 
     def read_full_pages():
@@ -128,13 +136,6 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
                           "seconds": round(time.perf_counter() - page_started, 3)})
         return pages
 
-    def select_template(text):
-        if extraction_template is not None:
-            return extraction_template
-        document_type = classify_document(text)
-        path = DEFAULT_TEMPLATE.parent / f"{document_type}.json"
-        return json.loads(path.read_text(encoding="utf-8"))
-
     def save_pages(pages, prefix):
         if not pages:
             raise ValueError("Đầu vào không có ảnh/trang để xử lý.")
@@ -145,14 +146,19 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
         (output / f"{prefix}.ocr.txt").write_text(text, encoding="utf-8")
         return pages
 
+    extract_started = time.perf_counter()
     pages, extracted = adaptive_extract(
         lambda limit: save_pages(read_pages(limit), "regions"),
-        select_template,
+        lambda text: extract_text(text, templates, kind),
         lambda: save_pages(read_full_pages(), "full_page"),
     )
     del ocr_engine, detector
+    # Gồm OCR mọi lần đọc lại của adaptive_extract và bước trích xuất.
+    timings["ocr_extract_seconds"] = round(time.perf_counter() - extract_started, 3)
+    timings["total_seconds"] = round(time.perf_counter() - started, 3)
+    print(f"Thời gian: {timings}", file=sys.stderr)
 
-    result = {"source": str(source), "pages": pages}
+    result = {"source": str(source), "pages": pages, "timings": timings}
     if not any(page["text"].strip() for page in pages):
         raise ValueError("Văn bản OCR rỗng; không thể trích xuất.")
     if not save_artifacts:

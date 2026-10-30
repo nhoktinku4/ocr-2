@@ -1,0 +1,50 @@
+{
+  "loai_giay_to": "Giấy chứng nhận đăng ký hộ kinh doanh",
+  "co_quan_cap": {
+    "ubnd": null,
+    "phong": null
+  },
+  "ma_so_ho_kinh_doanh": null,
+  "so_dang_ky": null,
+  "dang_ky_lan_dau": null,
+  "dang_ky_thay_doi": {
+    "lan_thu": null,
+    "ngay": null
+  },
+  "ten_ho_kinh_doanh": null,
+  "dia_diem_kinh_doanh": {
+    "dia_chi": null,
+    "dien_thoai": [],
+    "fax": null,
+    "email": null,
+    "website": null
+  },
+  "nganh_nghe_chinh": {
+    "ten": null,
+    "ma_nganh": null
+  },
+  "von_kinh_doanh": null,
+  "chu_ho": {
+    "ho_ten": null,
+    "gioi_tinh": null,
+    "ngay_sinh": null,
+    "dan_toc": null,
+    "quoc_tich": null,
+    "loai_giay_to": null,
+    "so_giay_to": null,
+    "ngay_cap": null,
+    "noi_cap": null,
+    "dia_chi_thuong_tru": null,
+    "dia_chi_lien_lac": null
+  },
+  "thanh_vien_ho": [
+    {
+      "ho_ten": null,
+      "ngay_sinh": null,
+      "gioi_tinh": null,
+      "quoc_tich": null,
+      "so_giay_to": null,
+      "dia_chi": null
+    }
+  ]
+}

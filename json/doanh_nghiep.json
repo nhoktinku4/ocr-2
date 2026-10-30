@@ -1,0 +1,61 @@
+{
+  "loai_giay_to": "Giấy chứng nhận đăng ký doanh nghiệp",
+  "co_quan_cap": {
+    "so": null,
+    "phong": null,
+    "tinh_thanh": null
+  },
+  "ma_so_doanh_nghiep": null,
+  "dang_ky_lan_dau": null,
+  "dang_ky_thay_doi": {
+    "lan_thu": null,
+    "ngay": null
+  },
+  "ten_cong_ty": {
+    "tieng_viet": null,
+    "tieng_nuoc_ngoai": null,
+    "viet_tat": null
+  },
+  "tru_so_chinh": {
+    "dia_chi": null,
+    "dien_thoai": [],
+    "fax": null,
+    "email": null,
+    "website": null
+  },
+  "von_dieu_le": null,
+  "thanh_vien": [
+    {
+      "ho_ten": null,
+      "gioi_tinh": null,
+      "ngay_sinh": null,
+      "dan_toc": null,
+      "quoc_tich": null,
+      "dia_chi": null,
+      "phan_von_gop": null,
+      "ty_le": null,
+      "loai_giay_to": null,
+      "so_giay_to": null,
+      "ghi_chu": null,
+      "ngay_cap": null,
+      "noi_cap": null,
+      "dia_chi_lien_lac": null
+    }
+  ],
+  "nguoi_dai_dien": [
+    {
+      "ho_ten": null,
+      "gioi_tinh": null,
+      "chuc_danh": null,
+      "ngay_sinh": null,
+      "dan_toc": null,
+      "quoc_tich": null,
+      "loai_giay_to": null,
+      "so_giay_to": null,
+      "ngay_cap": null,
+      "noi_cap": null,
+      "dia_chi_thuong_tru": null,
+      "dia_chi_lien_lac": null
+    }
+  ]
+}
