@@ -1,7 +1,9 @@
 """PDF/ảnh → phát hiện block chữ và bảng → OCR → trích xuất theo mẫu JSON."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stdout
+from functools import lru_cache
 import json
 from pathlib import Path
 import sys
@@ -23,6 +25,14 @@ DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "output_flow"
 OCR_MAX_TIME_SECONDS = 120.0
 OCR_MAX_NEW_TOKENS = 2048
 SUPPORTED_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
+# Số vùng gửi OCR cùng lúc; vLLM tự gom các request đồng thời thành batch.
+OCR_WORKERS = 6
+
+
+@lru_cache(maxsize=1)
+def _shared_detector():
+    """Nạp heron một lần cho cả tiến trình (API, batch) thay vì mỗi file."""
+    return load_detector()
 
 
 def _write_json(path, data):
@@ -68,7 +78,7 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
 
     engine_factory = QwenOCR if engine_factory is None else engine_factory
     detector_started = time.perf_counter()
-    detector = load_detector()
+    detector = _shared_detector()
     timings = {"load_detector_seconds": round(time.perf_counter() - detector_started, 3)}
     ocr_engine, cache = None, {}
 
@@ -82,7 +92,6 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
                                               save=save_artifacts, include_crops=not save_artifacts,
                                               largest_boxes=largest_boxes, padding=50)
             detect_seconds = round(time.perf_counter() - page_started, 3)
-            texts = []
             # Chỉ đọc các vùng vừa phát hiện trong report, bỏ qua crop cũ trên đĩa.
             regions = []
             for block_key, folder, prefix, label in (
@@ -94,22 +103,30 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
             # Dùng box phát hiện, không dùng crop_box có padding của bảng.
             # Cùng độ cao thì đọc từ trái sang phải.
             regions.sort(key=lambda region: (region[0]["box"][1], region[0]["box"][0]))
-            for block, block_key, folder, prefix, label in regions:
+            if regions and ocr_engine is None:
+                ocr_engine = engine_factory()
+
+            def read_region(region):
+                block, block_key, folder, prefix, label = region
                 crop = output / report["name"] / folder / f"{prefix}_{block['order']:03d}.png"
-                if ocr_engine is None:
-                    ocr_engine = engine_factory()
+                cache_key = (page, block_key, tuple(block["box"]))
+                if cache_key in cache:
+                    if save_artifacts:
+                        crop.with_suffix(".ocr.txt").write_text(cache[cache_key], encoding="utf-8")
+                    return cache[cache_key]
                 print(f"OCR trang {page}, {label} {block['order']}", file=sys.stderr)
                 prompt = TABLE_OCR_PROMPT if block_key == "table_blocks" else None
-                cache_key = (page, block_key, tuple(block["box"]))
-                if cache_key not in cache:
-                    if save_artifacts:
-                        cache[cache_key] = _ocr_crop(crop, ocr_engine, prompt=prompt)
-                    else:
-                        with Image.fromarray(cv2.cvtColor(block["crop"], cv2.COLOR_BGR2RGB)) as image:
-                            cache[cache_key] = _ocr_image(image, ocr_engine, prompt=prompt)
-                elif save_artifacts:
-                    crop.with_suffix(".ocr.txt").write_text(cache[cache_key], encoding="utf-8")
-                texts.append(cache[cache_key])
+                if save_artifacts:
+                    text = _ocr_crop(crop, ocr_engine, prompt=prompt)
+                else:
+                    with Image.fromarray(cv2.cvtColor(block["crop"], cv2.COLOR_BGR2RGB)) as image:
+                        text = _ocr_image(image, ocr_engine, prompt=prompt)
+                cache[cache_key] = text
+                return text
+
+            # map giữ đúng thứ tự đọc dù các vùng xong không theo thứ tự.
+            with ThreadPoolExecutor(OCR_WORKERS) as pool:
+                texts = list(pool.map(read_region, regions))
             seconds = round(time.perf_counter() - page_started, 3)
             pages.append({"page": page, "text": "\n\n".join(texts), "seconds": seconds,
                           "detect_seconds": detect_seconds,
@@ -152,7 +169,7 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
         lambda text: extract_text(text, templates, kind),
         lambda: save_pages(read_full_pages(), "full_page"),
     )
-    del ocr_engine, detector
+    del ocr_engine
     # Gồm OCR mọi lần đọc lại của adaptive_extract và bước trích xuất.
     timings["ocr_extract_seconds"] = round(time.perf_counter() - extract_started, 3)
     timings["total_seconds"] = round(time.perf_counter() - started, 3)
