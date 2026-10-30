@@ -315,6 +315,12 @@ def to_money(s):
     return int(re.sub(r"\D", "", m[0])) if m else None
 
 
+def money_text(s):
+    """'5.000.000.000 đồng' / '5,000,000,000' -> '5.000.000.000' (giữ dấu chấm hàng nghìn)."""
+    n = to_money(s)
+    return f"{n:,}".replace(",", ".") if n is not None else None
+
+
 def to_percent(s):
     """Kiểu Việt: '40,000' / '40%' -> 40.0 (dấu phẩy là phần thập phân)."""
     m = re.fullmatch(r"(\d{1,3})(?:[,.](\d+))?\s*%?", (s or "").strip())
@@ -442,7 +448,7 @@ def person(p, rep):
     if rep:
         d.update(chuc_danh=text(p.get("chuc_danh")), dia_chi_thuong_tru=place(p.get("thuong_tru")))
     else:
-        d.update(dia_chi=place(p.get("thuong_tru")), phan_von_gop=to_money(p.get("phan_von")),
+        d.update(dia_chi=place(p.get("thuong_tru")), phan_von_gop=money_text(p.get("phan_von")),
                  ty_le=to_percent(p.get("ty_le")))
     return d
 
@@ -484,7 +490,7 @@ def table_members(tables):
                 if not c:
                     continue
                 if MONEY_RE.match(c) and "phan_von_gop" not in m:
-                    m["phan_von_gop"] = to_money(c)
+                    m["phan_von_gop"] = money_text(c)
                 elif norm(c) in NATIONS and "quoc_tich" not in m:
                     m["quoc_tich"] = NATIONS[norm(c)]
                 elif ID_RE.match(c.replace(" ", "")) and "so_giay_to" not in m:
@@ -573,7 +579,7 @@ def extract(lines, tables):
             "email": email(first(fs, "email")),
             "website": website(first(fs, "website")),
         },
-        "von_dieu_le": to_money(von),
+        "von_dieu_le": money_text(von),
         "thanh_vien": members,
         "nguoi_dai_dien": reps,
     }
@@ -730,7 +736,7 @@ def extract_hkd(lines, tables):
             "website": website(first(fs, "website")),
         },
         "nganh_nghe_chinh": main_business(lines, tables),
-        "von_kinh_doanh": to_money(von),
+        "von_kinh_doanh": money_text(von),
         "chu_ho": chu,
         "thanh_vien_ho": household_members(tables),
     }
