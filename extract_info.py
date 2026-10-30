@@ -755,8 +755,18 @@ def hkd_title(n):
     return None
 
 
+HKD_MARKERS = ("ten ho kinh doanh", "dia diem kinh doanh", "tru so ho kinh doanh",
+               "von kinh doanh", "chu ho", "dai dien ho kinh doanh", "thanh lap ho kinh doanh")
+DN_MARKERS = ("ma so doanh nghiep", "ten cong ty", "von dieu le", "dang ky doanh nghiep")
+
+
 def is_hkd(lines):
-    return hkd_title([norm(l) for l in lines]) is not None
+    """Tiêu đề GCN hộ kinh doanh; tiêu đề OCR hỏng thì đếm nhãn đặc trưng ở phần thân."""
+    n = [norm(l) for l in lines]
+    if hkd_title(n) is not None:
+        return True
+    body = " ".join(n)
+    return sum(m in body for m in HKD_MARKERS) > sum(m in body for m in DN_MARKERS)
 
 
 def conform(data, tpl):
