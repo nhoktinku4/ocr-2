@@ -11,6 +11,9 @@ from box_detection import _largest_regions, sort_boxes
 LAYOUT_MODEL = Path(__file__).resolve().parent / "docling-layout-heron"
 PADDING = 30
 TABLE_PADDING = 30
+# Nhãn heron coi là vùng chữ khi tách box chữ thành vùng nhỏ hơn.
+TEXT_LABELS = frozenset({"caption", "footnote", "list_item", "page_footer", "page_header",
+                         "section_header", "text", "title"})
 
 
 class HeronDetector:
@@ -28,8 +31,8 @@ class HeronDetector:
         self.processor = AutoImageProcessor.from_pretrained(str(model_path))
         self.model = RTDetrV2ForObjectDetection.from_pretrained(str(model_path)).to(self.device).eval()
 
-    def __call__(self, image_bgr, conf=0.25):
-        """Trả về các box nhãn table dạng (x1, y1, x2, y2) float theo pixel ảnh gốc."""
+    def __call__(self, image_bgr, conf=0.25, labels=frozenset({"table"})):
+        """Trả về các box thuộc labels dạng (x1, y1, x2, y2) float theo pixel ảnh gốc."""
         rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
         inputs = self.processor(images=rgb, return_tensors="pt").to(self.device)
         with self.torch.inference_mode():
@@ -38,9 +41,9 @@ class HeronDetector:
         result = self.processor.post_process_object_detection(
             outputs, target_sizes=[(h, w)], threshold=conf,
         )[0]
-        labels = self.model.config.id2label
+        names = self.model.config.id2label
         return [tuple(map(float, box)) for box, label in zip(result["boxes"], result["labels"])
-                if labels[int(label)].lower() == "table"]
+                if names[int(label)].lower() in labels]
 
 
 def load_detector(model_path=LAYOUT_MODEL, device=None):
@@ -114,3 +117,43 @@ def detect_table_regions(image, detector, padding=TABLE_PADDING, iou_threshold=0
                 "crop": image[cy1:cy2, cx1:cx2],
             })
     return detected_count, blocks
+
+
+def _drop_contained(boxes, ratio=0.7):
+    """Bỏ box có ít nhất ratio diện tích nằm trong box lớn hơn để không OCR trùng."""
+    def area(box):
+        return max(0, box[2] - box[0]) * max(0, box[3] - box[1])
+
+    kept = []
+    for box in sorted(boxes, key=area, reverse=True):
+        inside = any(area((max(box[0], k[0]), max(box[1], k[1]),
+                           min(box[2], k[2]), min(box[3], k[3]))) >= ratio * area(box) for k in kept)
+        if not inside:
+            kept.append(box)
+    return kept
+
+
+def refine_text_blocks(image, blocks, detector, padding=10, iou_threshold=0.1, conf=0.25):
+    """Chạy heron trên từng box chữ; chỉ giữ vùng chữ model tìm được.
+
+    Box contour không có vùng chữ nào (mép giấy, viền bảng) bị bỏ.
+    """
+    h, w = image.shape[:2]
+    boxes = []
+    for block in blocks:
+        bx1, by1, bx2, by2 = block["box"]
+        found = [(math.floor(x1) + bx1, math.floor(y1) + by1, math.ceil(x2) + bx1, math.ceil(y2) + by1)
+                 for x1, y1, x2, y2 in detector(image[by1:by2, bx1:bx2], conf=conf, labels=TEXT_LABELS)]
+        for x1, y1, x2, y2 in merge_table_boxes(found, iou_threshold):
+            # Thêm padding nhưng không vượt khỏi box chữ gốc.
+            boxes.append((max(bx1, x1 - padding), max(by1, y1 - padding),
+                          min(bx2, x2 + padding), min(by2, y2 + padding)))
+    refined = []
+    for x1, y1, x2, y2 in sort_boxes(_drop_contained(boxes)):
+        x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2), min(h, y2)
+        if x2 > x1 and y2 > y1:
+            refined.append({
+                "order": len(refined) + 1, "box": [x1, y1, x2, y2],
+                "width": x2 - x1, "height": y2 - y1, "crop": image[y1:y2, x1:x2],
+            })
+    return refined

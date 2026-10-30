@@ -9,7 +9,8 @@ import cv2
 
 from box_detection import _text_regions
 from ocr_image_preparation import clean_image, resize_large_image
-from table_detection import LAYOUT_MODEL, PADDING, TABLE_PADDING, detect_table_regions, load_detector
+from table_detection import (LAYOUT_MODEL, PADDING, TABLE_PADDING, detect_table_regions,
+                             load_detector, refine_text_blocks)
 
 
 def _timer(timings):
@@ -78,7 +79,7 @@ def process_single_image(image_bgr, stem_name, output_dir,
         "contour_ms", _text_regions, cleaned, padding=padding,
         largest_boxes=largest_boxes, exclude_boxes=[block["box"] for block in table_blocks],
     )
-    blocks = blocks or []
+    blocks = timed("text_detect_ms", refine_text_blocks, cleaned, blocks or [], detector, conf=conf)
     if save:
         output.mkdir(parents=True, exist_ok=True)
         preview = output / "boxes.png"
