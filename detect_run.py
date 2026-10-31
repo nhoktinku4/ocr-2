@@ -2,111 +2,32 @@
 
 Các bước giống page_processing.process_single_image:
     resize → chỉnh nghiêng → làm sạch → heron tìm bảng → contour lấy khung chữ ngoài bảng
-rồi chạy heron trên từng khung contour, gộp box trùng/chồng nhau (IoU hoặc box nằm trong box
-khác), gộp box gần nhau trên cùng dòng và bỏ box chữ nằm trong bảng. Kết quả mỗi trang: boxes.png, boxes.json, crops/, tables/.
+Vùng chữ lấy trực tiếp từ contour (không dùng model), heron chỉ dùng để tìm bảng.
+Kết quả mỗi trang: boxes.png, boxes.json, crops/, tables/.
 """
 
 import argparse
 import json
-import math
 import sys
 import time
 from pathlib import Path
 
 import cv2
 
-from box_detection import _text_regions, sort_boxes
+from box_detection import _text_regions
 from image_io import iter_images
 from ocr_image_preparation import clean_image, prepare_page, resize_large_image
 from page_processing import _build_report, _timer, draw_boxes
-from table_detection import PADDING, TABLE_PADDING, TEXT_LABELS, detect_table_regions, load_detector
+from table_detection import PADDING, TABLE_PADDING, detect_table_regions, load_detector
 
 
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "output_detect"
 # Như main.SUPPORTED_SUFFIXES; không import main để khỏi nạp phần OCR.
 SUPPORTED_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
-LAYOUT_LABELS = TEXT_LABELS | {"key_value_region"}
-
-
-def _area(box):
-    return max(0, box[2] - box[0]) * max(0, box[3] - box[1])
-
-
-def _inter(a, b):
-    return max(0, min(a[2], b[2]) - max(a[0], b[0])) * max(0, min(a[3], b[3]) - max(a[1], b[1]))
-
-
-def merge_boxes(boxes, iou_thr=1.0, contain_thr=0.8):
-    """Gộp box trùng/chồng nhau (IoU >= iou_thr hoặc giao / box nhỏ >= contain_thr), lặp đến khi ổn định."""
-    changed = True
-    while changed:
-        changed, out = False, []
-        for box in sorted(boxes, key=_area, reverse=True):
-            for i, m in enumerate(out):
-                inter = _inter(box, m)
-                if inter and (inter / max(_area(box) + _area(m) - inter, 1) >= iou_thr
-                              or inter / max(min(_area(box), _area(m)), 1) >= contain_thr):
-                    out[i] = (min(box[0], m[0]), min(box[1], m[1]), max(box[2], m[2]), max(box[3], m[3]))
-                    changed = True
-                    break
-            else:
-                out.append(box)
-        boxes = out
-    return boxes
-
-
-def merge_horizontal(boxes, gap_ratio=2.0):
-    """Gộp box cùng dòng nằm gần nhau theo chiều ngang (vd nhãn "Sinh ngày:" + giá trị "01/09/1987").
-
-    Cùng dòng: chồng theo trục y >= 50% box thấp hơn. Gần: khoảng trống ngang <= gap_ratio × chiều cao box thấp hơn.
-    """
-    changed = True
-    while changed:
-        changed, out = False, []
-        for box in sorted(boxes, key=lambda b: b[0]):
-            for i, m in enumerate(out):
-                height = min(box[3] - box[1], m[3] - m[1])
-                same_row = min(box[3], m[3]) - max(box[1], m[1]) >= 0.5 * height
-                gap = max(box[0], m[0]) - min(box[2], m[2])
-                if same_row and gap <= gap_ratio * height:
-                    out[i] = (min(box[0], m[0]), min(box[1], m[1]), max(box[2], m[2]), max(box[3], m[3]))
-                    changed = True
-                    break
-            else:
-                out.append(box)
-        boxes = out
-    return boxes
-
-
-def drop_text_in_tables(boxes, tables, contain_thr=0.8):
-    """Bỏ box chữ có >= contain_thr diện tích nằm trong một bảng."""
-    return [b for b in boxes
-            if not any(_inter(b, t) >= contain_thr * max(_area(b), 1) for t in tables)]
-
-
-def layout_text_blocks(image, blocks, detector, conf=0.3, merge=True, hmerge_gap=2.0, iou_thr=1.0, contain_thr=0.8,
-                       tables=(), table_contain_thr=0.8):
-    """Chạy heron trên từng khung contour, gộp box trùng, bỏ box nằm trong bảng; tọa độ theo ảnh image."""
-    h, w = image.shape[:2]
-    boxes = []
-    for block in blocks:
-        bx1, by1, bx2, by2 = block["box"]
-        boxes += [(max(0, math.floor(x1) + bx1), max(0, math.floor(y1) + by1),
-                   min(w, math.ceil(x2) + bx1), min(h, math.ceil(y2) + by1))
-                  for x1, y1, x2, y2 in detector(image[by1:by2, bx1:bx2], conf=conf, labels=LAYOUT_LABELS)]
-    if merge:
-        boxes = merge_boxes(boxes, iou_thr, contain_thr)
-    if hmerge_gap > 0:
-        boxes = merge_horizontal(boxes, hmerge_gap)
-    boxes = drop_text_in_tables(boxes, tables, table_contain_thr)
-    return [{"order": order, "box": [x1, y1, x2, y2], "width": x2 - x1, "height": y2 - y1,
-             "crop": image[y1:y2, x1:x2]}
-            for order, (x1, y1, x2, y2) in enumerate(sort_boxes(boxes), 1)
-            if x2 > x1 and y2 > y1]
 
 
 def detect_page(image_bgr, name, output, detector, *, padding=PADDING, table_padding=TABLE_PADDING,
-                conf=0.25, text_conf=0.3, crop_blocks=True, **post_kwargs):
+                conf=0.25, crop_blocks=True):
     timings = {}
     timed = _timer(timings)
     resized = timed("resize_ms", resize_large_image, image_bgr)
@@ -114,10 +35,9 @@ def detect_page(image_bgr, name, output, detector, *, padding=PADDING, table_pad
     cleaned = timed("clean_ms", clean_image, prepared, padding=padding)
     detected_count, table_blocks = timed("table_detect_ms", detect_table_regions, cleaned, detector,
                                          padding=table_padding, conf=conf)
-    _, _, contour_blocks = timed("contour_ms", _text_regions, cleaned, padding=padding,
-                                 exclude_boxes=[b["box"] for b in table_blocks])
-    blocks = timed("text_detect_ms", layout_text_blocks, cleaned, contour_blocks or [], detector,
-                   conf=text_conf, tables=[b["box"] for b in table_blocks], **post_kwargs)
+    _, _, blocks = timed("contour_ms", _text_regions, cleaned, padding=padding,
+                         exclude_boxes=[b["box"] for b in table_blocks])
+    blocks = blocks or []
 
     page_dir = Path(output) / name
     page_dir.mkdir(parents=True, exist_ok=True)
@@ -132,7 +52,6 @@ def detect_page(image_bgr, name, output, detector, *, padding=PADDING, table_pad
         name, image_bgr, cleaned, timings, blocks,
         coordinate_space="cleaned", box_format="xyxy", skew_angle=skew_angle,
         detected_box_count=detected_count, table_block_count=len(table_blocks), table_blocks=table_blocks,
-        contour_blocks=[b["box"] for b in contour_blocks or []],
     )
     (page_dir / "boxes.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"  {name}: {len(table_blocks)} bảng, {len(blocks)} vùng chữ", file=sys.stderr)
@@ -174,20 +93,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path, help="File PDF/ảnh hoặc thư mục (quét cả thư mục con)")
     parser.add_argument("-o", "--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument("--text-conf", type=float, default=0.3, help="Ngưỡng heron cho vùng chữ")
-    parser.add_argument("--hmerge-gap", type=float, default=2.0,
-                        help="Gộp box cùng dòng có khoảng trống ngang <= hệ số × chiều cao dòng (0 = tắt)")
-    parser.add_argument("--no-merge", action="store_true", help="Tắt gộp box trùng")
-    parser.add_argument("--merge-iou", type=float, default=1.0, help="Ngưỡng IoU để gộp")
-    parser.add_argument("--merge-contain", type=float, default=0.8,
-                        help="Ngưỡng giao / diện tích box nhỏ để gộp (box nằm trong box khác)")
-    parser.add_argument("--table-contain", type=float, default=0.8,
-                        help="Tỉ lệ diện tích box chữ nằm trong bảng để bị bỏ")
     parser.add_argument("--no-crops", dest="crop_blocks", action="store_false", help="Không lưu ảnh crop")
     args = parser.parse_args()
-    run(args.source, args.output_dir, text_conf=args.text_conf, crop_blocks=args.crop_blocks,
-        merge=not args.no_merge, hmerge_gap=args.hmerge_gap, iou_thr=args.merge_iou, contain_thr=args.merge_contain,
-        table_contain_thr=args.table_contain)
+    run(args.source, args.output_dir, crop_blocks=args.crop_blocks)
     return 0
 
 
