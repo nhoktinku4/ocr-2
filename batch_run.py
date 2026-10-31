@@ -3,6 +3,7 @@
 import argparse
 import csv
 from pathlib import Path
+import shutil
 import sys
 import time
 
@@ -31,16 +32,26 @@ def run_batch(data_dir, output_dir, template=None, refine_text=True):
             engine = QwenOCR()
         return engine
 
-    rows, documents = [], []
+    rows, documents, used_names = [], [], set()
     batch_started = time.perf_counter()
     for index, source in enumerate(files, 1):
         relative = source.relative_to(data_dir)
         print(f"[{index}/{len(files)}] {relative}", file=sys.stderr)
         started = time.perf_counter()
         doc = {"file": str(relative), "status": "ok", "error": None, "pages": []}
+        # Mỗi file một thư mục <tên file> ngay dưới output_dir (không giữ thư mục con của dữ liệu),
+        # chứa bản sao file gốc và extract.json; trùng tên thì thêm _2, _3...
+        name, suffix = source.stem, 2
+        while name in used_names:
+            name, suffix = f"{source.stem}_{suffix}", suffix + 1
+        used_names.add(name)
+        doc_dir = output_dir / name
         try:
-            result = run_flow(source, output_dir / relative.with_suffix(""), template,
-                              engine_factory=engine_factory, refine_text=refine_text)
+            result = run_flow(source, doc_dir, template, engine_factory=engine_factory,
+                              save_artifacts=False, refine_text=refine_text)
+            doc_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, doc_dir / source.name)
+            _write_json(doc_dir / "extract.json", result["extracted"])
             doc["pages"] = [{key: p.get(key) for key in PAGE_TIMING_KEYS} for p in result["pages"]]
             doc["timings"] = result.get("timings", {})
         except Exception as exc:  # noqa: BLE001 - ghi lỗi rồi chạy tiếp file khác
