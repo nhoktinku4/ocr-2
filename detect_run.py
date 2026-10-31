@@ -3,7 +3,7 @@
 Các bước giống page_processing.process_single_image:
     resize → chỉnh nghiêng → làm sạch → heron tìm bảng → contour lấy khung chữ ngoài bảng
 rồi chạy heron trên từng khung contour, tách box bao nhiều dòng thành từng dòng, gộp box trùng/chồng nhau (IoU hoặc box nằm trong box
-khác) và bỏ box chữ nằm trong bảng. Kết quả mỗi trang: boxes.png, boxes.json, crops/, tables/.
+khác), gộp box gần nhau trên cùng dòng và bỏ box chữ nằm trong bảng. Kết quả mỗi trang: boxes.png, boxes.json, crops/, tables/.
 """
 
 import argparse
@@ -100,13 +100,36 @@ def merge_boxes(boxes, iou_thr=1.0, contain_thr=0.8):
     return boxes
 
 
+def merge_horizontal(boxes, gap_ratio=2.0):
+    """Gộp box cùng dòng nằm gần nhau theo chiều ngang (vd nhãn "Sinh ngày:" + giá trị "01/09/1987").
+
+    Cùng dòng: chồng theo trục y >= 50% box thấp hơn. Gần: khoảng trống ngang <= gap_ratio × chiều cao box thấp hơn.
+    """
+    changed = True
+    while changed:
+        changed, out = False, []
+        for box in sorted(boxes, key=lambda b: b[0]):
+            for i, m in enumerate(out):
+                height = min(box[3] - box[1], m[3] - m[1])
+                same_row = min(box[3], m[3]) - max(box[1], m[1]) >= 0.5 * height
+                gap = max(box[0], m[0]) - min(box[2], m[2])
+                if same_row and gap <= gap_ratio * height:
+                    out[i] = (min(box[0], m[0]), min(box[1], m[1]), max(box[2], m[2]), max(box[3], m[3]))
+                    changed = True
+                    break
+            else:
+                out.append(box)
+        boxes = out
+    return boxes
+
+
 def drop_text_in_tables(boxes, tables, contain_thr=0.8):
     """Bỏ box chữ có >= contain_thr diện tích nằm trong một bảng."""
     return [b for b in boxes
             if not any(_inter(b, t) >= contain_thr * max(_area(b), 1) for t in tables)]
 
 
-def layout_text_blocks(image, blocks, detector, conf=0.3, split=True, merge=True, iou_thr=1.0, contain_thr=0.8,
+def layout_text_blocks(image, blocks, detector, conf=0.3, split=True, merge=True, hmerge_gap=2.0, iou_thr=1.0, contain_thr=0.8,
                        tables=(), table_contain_thr=0.8):
     """Chạy heron trên từng khung contour, gộp box trùng, bỏ box nằm trong bảng; tọa độ theo ảnh image."""
     h, w = image.shape[:2]
@@ -120,6 +143,8 @@ def layout_text_blocks(image, blocks, detector, conf=0.3, split=True, merge=True
         boxes = split_containers(boxes, contain_thr)
     if merge:
         boxes = merge_boxes(boxes, iou_thr, contain_thr)
+    if hmerge_gap > 0:
+        boxes = merge_horizontal(boxes, hmerge_gap)
     boxes = drop_text_in_tables(boxes, tables, table_contain_thr)
     return [{"order": order, "box": [x1, y1, x2, y2], "width": x2 - x1, "height": y2 - y1,
              "crop": image[y1:y2, x1:x2]}
@@ -199,6 +224,8 @@ def main():
     parser.add_argument("--text-conf", type=float, default=0.3, help="Ngưỡng heron cho vùng chữ")
     parser.add_argument("--no-split", action="store_true",
                         help="Không tách box bao nhiều dòng trước khi gộp (giữ khối lớn)")
+    parser.add_argument("--hmerge-gap", type=float, default=2.0,
+                        help="Gộp box cùng dòng có khoảng trống ngang <= hệ số × chiều cao dòng (0 = tắt)")
     parser.add_argument("--no-merge", action="store_true", help="Tắt gộp box trùng")
     parser.add_argument("--merge-iou", type=float, default=1.0, help="Ngưỡng IoU để gộp")
     parser.add_argument("--merge-contain", type=float, default=0.8,
@@ -208,7 +235,7 @@ def main():
     parser.add_argument("--no-crops", dest="crop_blocks", action="store_false", help="Không lưu ảnh crop")
     args = parser.parse_args()
     run(args.source, args.output_dir, text_conf=args.text_conf, crop_blocks=args.crop_blocks,
-        split=not args.no_split, merge=not args.no_merge, iou_thr=args.merge_iou, contain_thr=args.merge_contain,
+        split=not args.no_split, merge=not args.no_merge, hmerge_gap=args.hmerge_gap, iou_thr=args.merge_iou, contain_thr=args.merge_contain,
         table_contain_thr=args.table_contain)
     return 0
 
