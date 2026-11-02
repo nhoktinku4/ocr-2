@@ -163,7 +163,7 @@ LABELS = {
     "ho_ten": ["ho va ten", "ho ten", "ho va ten dai dien ho kinh doanh"],
     "gioi_tinh": ["gioi tinh"],
     "chuc_danh": ["chuc danh"],
-    "ngay_sinh": ["sinh ngay", "ngay sinh"],
+    "ngay_sinh": ["sinh ngay", "ngay sinh", "nam sinh"],
     "dan_toc": ["dan toc"],
     "quoc_tich": ["quoc tich"],
     "loai_giay_to": ["loai giay to phap ly cua ca nhan", "loai giay to chung thuc ca nhan",
@@ -294,6 +294,12 @@ def to_date(s):
     if not (1 <= int(m[1]) <= 31 and 1 <= int(m[2]) <= 12):
         return None
     return f"{m[3]}-{int(m[2]):02d}-{int(m[1]):02d}"
+
+
+def birth_date(s):
+    """Ngày sinh; chỉ ghi năm ('1958', 'năm 1958') thì trả về năm '1958'."""
+    m = re.fullmatch(r"\D*((?:19|20)\d{2})\D*", s or "")
+    return to_date(s) or (m[1] if m else None)
 
 
 def to_money(s):
@@ -427,7 +433,7 @@ def person(p, rep):
     d = {
         "ho_ten": upper_if_mostly(p.get("ho_ten")),
         "gioi_tinh": text(p.get("gioi_tinh")),
-        "ngay_sinh": to_date(p.get("ngay_sinh")),
+        "ngay_sinh": birth_date(p.get("ngay_sinh")),
         "dan_toc": text(p.get("dan_toc")),
         "quoc_tich": text(p.get("quoc_tich")),
         "loai_giay_to": text(p.get("loai_giay_to")),
@@ -654,8 +660,8 @@ def household_members(tables):
             for c in (clean(c).strip("*_ ") for c in row[1:]):
                 if not c:
                     continue
-                if to_date(c) and "ngay_sinh" not in m:
-                    m["ngay_sinh"] = to_date(c)
+                if birth_date(c) and "ngay_sinh" not in m:
+                    m["ngay_sinh"] = birth_date(c)
                 elif norm(c) in ("nam", "nu") and "gioi_tinh" not in m:
                     m["gioi_tinh"] = "Nam" if norm(c) == "nam" else "Nữ"
                 elif norm(c) in NATIONS and "quoc_tich" not in m:
