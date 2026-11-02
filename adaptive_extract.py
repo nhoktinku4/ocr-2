@@ -11,6 +11,11 @@ REQUIRED = {
                             ('dia_diem_kinh_doanh', 'dia_chi'), ('von_kinh_doanh',),
                             ('chu_ho', 'ho_ten'), ('co_quan_cap',)),
 }
+# Thành viên: có 2 mẫu, mỗi mẫu được phép trống các trường riêng, còn lại phải đủ.
+MEMBER_OPTIONAL = (
+    {'phan_von_gop', 'ty_le', 'ghi_chu'},
+    {'gioi_tinh', 'ngay_sinh', 'dan_toc', 'ghi_chu', 'ngay_cap', 'noi_cap', 'dia_chi_lien_lac'},
+)
 
 
 def _empty(value):
@@ -38,6 +43,12 @@ def missing_fields(data):
         if isinstance(person, dict) and not _empty(person):
             missing += [f'{name}.{key}' for key, value in person.items()
                         if _empty(value) and f'{name}.{key}' not in missing]
+    for i, person in enumerate(data.get('thanh_vien') or []):
+        if isinstance(person, dict) and not _empty(person):
+            empty = {key for key, value in person.items() if _empty(value)}
+            # theo mẫu gần nhất: báo các trường trống ngoài phần mẫu đó cho phép
+            lacking = min((empty - optional for optional in MEMBER_OPTIONAL), key=len)
+            missing += [f'thanh_vien[{i}].{key}' for key in person if key in lacking]
     return missing
 
 
