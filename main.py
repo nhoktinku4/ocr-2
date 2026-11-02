@@ -153,8 +153,9 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
             if save_artifacts:
                 page_output.mkdir(parents=True, exist_ok=True)
                 (page_output / "full_page.ocr.txt").write_text(text, encoding="utf-8")
-            pages.append({"page": page, "text": text,
-                          "seconds": round(time.perf_counter() - page_started, 3)})
+            seconds = round(time.perf_counter() - page_started, 3)
+            pages.append({"page": page, "text": text, "seconds": seconds,
+                          "detect_seconds": 0.0, "ocr_seconds": seconds})
         return pages
 
     def save_pages(pages, prefix):
