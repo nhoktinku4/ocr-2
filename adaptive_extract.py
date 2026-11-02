@@ -8,7 +8,8 @@ REQUIRED = {
                            ('ten_cong_ty', 'tieng_viet'), ('tru_so_chinh', 'dia_chi'),
                            ('von_dieu_le',)),
     'ma_so_ho_kinh_doanh': (('ten_ho_kinh_doanh',), ('dang_ky_lan_dau',),
-                            ('dia_diem_kinh_doanh', 'dia_chi'), ('chu_ho', 'ho_ten')),
+                            ('dia_diem_kinh_doanh', 'dia_chi'), ('von_kinh_doanh',),
+                            ('chu_ho', 'ho_ten')),
 }
 
 
