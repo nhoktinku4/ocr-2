@@ -176,7 +176,7 @@ LABELS = {
                    "so giay to", "so cmnd", "so can cuoc cong dan", "chung minh nhan dan so",
                    "so can cuoc cong dan/chung minh nhan dan", "so giay chung thuc ca nhan"],
     "ngay_cap": ["ngay cap"],
-    "noi_cap": ["noi cap"],
+    "noi_cap": ["noi cap", "co quan cap"],
     "thuong_tru": ["dia chi thuong tru", "noi dang ky ho khau thuong tru"],
     "lien_lac": ["dia chi lien lac", "cho o hien tai"],
     "phan_von": ["phan von gop", "gia tri phan von gop", "gia tri von gop"],
