@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.git/
+output_flow*/
+docling-layout-heron/
+test.txt
+.env
