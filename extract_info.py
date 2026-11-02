@@ -1,11 +1,6 @@
 """
-Trích xuất thông tin Giấy chứng nhận đăng ký doanh nghiệp từ text.txt (kết quả OCR)
-theo mẫu gcn_dkdn_template.json, bằng luật (không cần model).
-
-Sử dụng:
-    python extract_info.py batch_out/2743901/text.txt          # in ra màn hình
-    python extract_info.py batch_out/2743901/text.txt -o a.json
-    python extract_info.py batch_out                           # mọi */text.txt -> extract.json cạnh nó
+Trích xuất thông tin GCN đăng ký doanh nghiệp / hộ kinh doanh từ văn bản OCR
+theo mẫu json/*.json, bằng luật (không cần model).
 
 Chịu lỗi OCR:
     - nhãn so khớp không dấu + gần đúng ('Tân công ty viết tắt', 'Dịạ chỉ', 'Sinh ngay');
@@ -14,7 +9,6 @@ Chịu lỗi OCR:
     - sửa dấu / chính tả các từ thông dụng (địa danh, đơn vị hành chính, giấy tờ, chức danh,
       từ trong tên công ty, số đọc bằng chữ) - chỉ khi chắc chắn, tên riêng giữ nguyên.
 """
-import argparse
 import json
 import os
 import re
@@ -223,18 +217,7 @@ def is_label(line):
     return bool(sep) and match_label(key) is not None
 
 
-# ----------------------------------------------------------------- đọc text.txt
-def read_text(path):
-    """-> (lines, tables). Bảng = khối dòng liền nhau bắt đầu bằng '|'
-    (vẫn đọc được text.txt cũ có '--- bảng k' / '---')."""
-    if path.lower().endswith((".pdf", ".png", ".jpg", ".jpeg")):
-        raise SystemExit(f"{path}: cần file text.txt (kết quả OCR), không phải ảnh/PDF. "
-                         "Chạy main.py trước.")
-    # utf-8-sig: bỏ BOM; errors="replace": file lẫn ký tự hỏng vẫn đọc được
-    with open(path, encoding="utf-8-sig", errors="replace") as f:
-        return parse_text(f)
-
-
+# ----------------------------------------------------------------- đọc văn bản OCR
 def parse_text(raw_lines):
     """Dòng văn bản OCR -> (lines, tables)."""
     lines, tables, table = [], [], None
@@ -392,11 +375,6 @@ def issuer(s):
         return None
     best = max(ISSUERS, key=lambda c: SequenceMatcher(None, norm(s), norm(c)).ratio())
     return best if SequenceMatcher(None, norm(s), norm(best)).ratio() >= 0.8 else text(s)
-
-
-def money_words(s):
-    s = fix_words(s, "money") if s else s
-    return s[:1].upper() + s[1:] if s else None
 
 
 def email(s):
@@ -611,7 +589,6 @@ def section_text(lines, *keys):
 
 
 CODE_RE = re.compile(r"\b(\d{4,5})\b")          # mã ngành VSIC 4-5 chữ số
-MAIN_RE = re.compile(r"\(?\s*chinh\s*\)?")
 
 
 def main_business(lines, tables):
@@ -843,44 +820,3 @@ def extract_text(text, tpls=None, kind=None):
         return fix_id_types(conform(extract_hkd(lines, tables), tpls["hkd"]))
     return fix_id_types(conform(extract(lines, tables), tpls["dn"]))
 
-
-def extract_file(path, tpls=None):
-    """text.txt -> dict theo mẫu, tự nhận loại giấy (doanh nghiệp / hộ kinh doanh)."""
-    tpls = tpls or load_templates()
-    lines, tables = read_text(path)
-    if is_hkd(lines):
-        return fix_id_types(conform(extract_hkd(lines, tables), tpls["hkd"]))
-    return fix_id_types(conform(extract(lines, tables), tpls["dn"]))
-
-
-def main():
-    ap = argparse.ArgumentParser(description="Trích xuất GCN đăng ký doanh nghiệp từ text.txt")
-    ap.add_argument("inputs", nargs="+", help="file text.txt hoặc thư mục chứa */text.txt")
-    ap.add_argument("-o", "--out", help="file .json khi chỉ có 1 đầu vào (mặc định: in ra)")
-    ap.add_argument("--template", default=TEMPLATE, help="mẫu JSON cho doanh nghiệp")
-    args = ap.parse_args()
-
-    tpls = load_templates(args.template)
-    paths = []
-    for p in args.inputs:
-        if os.path.isdir(p):
-            paths += sorted(os.path.join(d, "text.txt") for d, _, fs in os.walk(p) if "text.txt" in fs)
-        else:
-            paths.append(p)
-    if not paths:
-        raise SystemExit("Không tìm thấy text.txt")
-
-    for path in paths:
-        info = json.dumps(extract_file(path, tpls), ensure_ascii=False, indent=2)
-        if len(paths) == 1 and not args.out and not os.path.isdir(args.inputs[0]):
-            print(info)
-            continue
-        out = args.out if len(paths) == 1 and args.out else \
-            os.path.join(os.path.dirname(path), "extract.json")
-        with open(out, "w", encoding="utf-8") as f:
-            f.write(info + "\n")
-        print(f"-> {out}")
-
-
-if __name__ == "__main__":
-    main()
