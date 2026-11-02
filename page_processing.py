@@ -10,7 +10,7 @@ import cv2
 from box_detection import _text_regions
 from ocr_image_preparation import clean_image, prepare_page, resize_large_image
 from table_detection import (LAYOUT_MODEL, PADDING, TABLE_PADDING, detect_table_regions,
-                             load_detector, refine_text_blocks)
+                             load_detector)
 
 
 def _timer(timings):
@@ -54,12 +54,11 @@ def process_single_image(image_bgr, stem_name, output_dir,
                          crop_blocks=True, padding=PADDING, save=False, largest_boxes=None,
                          *, detector=None, model_path=LAYOUT_MODEL, iou_threshold=0.1,
                          conf=0.25, device=None, table_padding=TABLE_PADDING,
-                         include_crops=False, refine_text=True):
+                         include_crops=False):
     """Phát hiện tất cả bảng trước khi lấy các khối chữ không giao với bảng.
 
     largest_boxes chỉ giới hạn vùng chữ ngoài bảng; mọi bảng đều được loại trừ.
     table_padding chỉ mở rộng crop bảng để OCR; vùng tô trắng dùng box không padding.
-    refine_text=False bỏ bước heron tách vùng chữ, OCR trực tiếp box contour.
     """
     if padding < 0 or table_padding < 0:
         raise ValueError("padding/table_padding phải >= 0.")
@@ -82,8 +81,6 @@ def process_single_image(image_bgr, stem_name, output_dir,
         largest_boxes=largest_boxes, exclude_boxes=[block["box"] for block in table_blocks],
     )
     blocks = blocks or []
-    if refine_text:
-        blocks = timed("text_detect_ms", refine_text_blocks, cleaned, blocks, detector, conf=conf)
     if save:
         output.mkdir(parents=True, exist_ok=True)
         preview = output / "boxes.png"
