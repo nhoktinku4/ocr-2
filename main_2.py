@@ -6,7 +6,7 @@ import os
 import cv2
 import numpy as np
 
-from box_detection import _largest_regions, merge_boxes, sort_boxes, subtract_boxes
+from box_detection import _largest_regions, sort_boxes, subtract_boxes
 import main
 import page_processing
 
@@ -31,8 +31,8 @@ def _db_detector():
 
 def _dbnet_text_regions(image, top=50, crop_ratio=0.015, padding=15, gap_x=30, gap_y=20,
                         largest_boxes=None, exclude_boxes=None):
-    """Cùng giao diện với box_detection._text_regions: DBNet tìm dòng chữ,
-    gộp dòng gần nhau thành block, loại bảng khỏi box cuối cùng."""
+    """Cùng giao diện với box_detection._text_regions: mỗi dòng DBNet tìm được
+    là một block, loại bảng khỏi box cuối cùng."""
     if largest_boxes is not None and largest_boxes <= 0:
         raise ValueError("largest_boxes phải là số nguyên dương")
     h, w = image.shape[:2]
@@ -53,7 +53,7 @@ def _dbnet_text_regions(image, top=50, crop_ratio=0.015, padding=15, gap_x=30, g
     for quad in quads:
         x, y, bw, bh = cv2.boundingRect(np.asarray(quad, dtype=np.int32))
         boxes.append((x, y, x + bw, y + bh))
-    boxes = merge_boxes(boxes, gap_x, gap_y)
+    # Không gộp: mỗi dòng DBNet tìm được là một block (gap_x/gap_y bỏ qua).
     boxes = sorted(boxes, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]), reverse=True)[:top]
     if largest_boxes is not None and not excluded:
         boxes = _largest_regions(boxes, largest_boxes)
