@@ -6,17 +6,19 @@ import sys
 REQUIRED = {
     'ma_so_doanh_nghiep': (('ma_so_doanh_nghiep',), ('dang_ky_lan_dau',),
                            ('ten_cong_ty', 'tieng_viet'), ('tru_so_chinh', 'dia_chi'),
-                           ('von_dieu_le',)),
+                           ('von_dieu_le',), ('co_quan_cap',)),
     'ma_so_ho_kinh_doanh': (('ten_ho_kinh_doanh',), ('dang_ky_lan_dau',),
                             ('dia_diem_kinh_doanh', 'dia_chi'), ('von_kinh_doanh',),
-                            ('chu_ho', 'ho_ten')),
+                            ('chu_ho', 'ho_ten'), ('co_quan_cap',)),
 }
 
 
 def _empty(value):
     if isinstance(value, str):
         return not value.strip()
-    return value is None or value == [] or value == {}
+    if isinstance(value, dict):                 # vd. co_quan_cap: mọi trường con đều trống
+        return all(_empty(v) for v in value.values())
+    return value is None or value == []
 
 
 def _get(data, path):
