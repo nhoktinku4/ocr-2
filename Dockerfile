@@ -8,10 +8,14 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Model heron không nằm trong git: tải từ Hugging Face lúc build
-RUN python -c "from huggingface_hub import snapshot_download; \
+# Model heron không nằm trong git: có sẵn thư mục docling-layout-heron/ cạnh Dockerfile
+# thì copy vào (glob * cho phép thư mục vắng mặt), không thì tải từ Hugging Face
+COPY requirements.txt docling-layout-heron* docling-layout-heron/
+RUN if [ ! -f docling-layout-heron/model.safetensors ]; then \
+    python -c "from huggingface_hub import snapshot_download; \
 snapshot_download('docling-project/docling-layout-heron', local_dir='docling-layout-heron', \
-allow_patterns=['config.json', 'model.safetensors', 'preprocessor_config.json'])"
+allow_patterns=['config.json', 'model.safetensors', 'preprocessor_config.json'])"; \
+    fi && rm -f docling-layout-heron/requirements.txt
 
 COPY json/ json/
 COPY *.py ./
