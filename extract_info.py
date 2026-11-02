@@ -71,6 +71,8 @@ ADMIN_WORDS = [
     "Phú Yên", "Thừa Thiên Huế", "Huế", "Quảng Trị", "Quảng Bình", "Hà Tĩnh", "Nghệ An",
     "Thanh Hóa", "Ninh Bình", "Nam Định", "Thái Bình", "Hưng Yên", "Hải Dương", "Bắc Ninh",
     "Bắc Giang", "Quảng Ninh", "Vĩnh Phúc", "Phú Thọ", "Thái Nguyên", "Lạng Sơn",
+    "Hà Nam", "Hòa Bình", "Sơn La", "Lai Châu", "Điện Biên", "Lào Cai", "Yên Bái", "Hà Giang",
+    "Tuyên Quang", "Cao Bằng", "Bắc Kạn", "Đắk Nông",
     "Hóc Môn", "Củ Chi", "Thủ Đức", "Gò Vấp", "Tân Bình", "Bình Thạnh", "Phú Nhuận",
     "Ninh Kiều", "Cái Khế", "Cai Lậy", "Cái Bè", "Mỹ Tho", "Gò Công",
 ]
@@ -352,7 +354,7 @@ def upper_if_mostly(s):
 
 
 # 'Tỉnh Tây Ninh', 'Thành phố Hồ Chí Minh': địa danh trong ADMIN_WORDS (từ 'Hồ Chí Minh' trở đi)
-PROVINCE_END = re.compile(r"\b(?:Tỉnh|Thành phố)\s+(?:%s)\b" % "|".join(
+PROVINCE_END = re.compile(r"\b(?:Tỉnh|Thành phố)\s+(?:Bà Rịa\s*[-–]\s*Vũng Tàu|%s)\b" % "|".join(
     map(re.escape, sorted(ADMIN_WORDS[ADMIN_WORDS.index("Hồ Chí Minh"):], key=len, reverse=True))))
 
 
