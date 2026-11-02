@@ -55,8 +55,12 @@ def _ocr_crop(crop, engine, *, prompt=None):
     return text
 
 
-def run_flow(source, output=None, template=None, *, engine_factory=None, save_artifacts=True):
-    """OCR mọi trang rồi trích xuất toàn tài liệu theo mẫu JSON được chọn."""
+def run_flow(source, output=None, template=None, *, engine_factory=None, save_artifacts=True,
+             full_page=False):
+    """OCR mọi trang rồi trích xuất toàn tài liệu theo mẫu JSON được chọn.
+
+    full_page=True: OCR thẳng toàn trang, không tìm vùng chữ/bảng (không nạp heron).
+    """
     started = time.perf_counter()
     source = Path(source).expanduser().resolve()
     if not source.is_file() or source.suffix.lower() not in SUPPORTED_SUFFIXES:
@@ -78,7 +82,7 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
 
     engine_factory = QwenOCR if engine_factory is None else engine_factory
     detector_started = time.perf_counter()
-    detector = _shared_detector()
+    detector = None if full_page else _shared_detector()
     timings = {"load_detector_seconds": round(time.perf_counter() - detector_started, 3)}
     ocr_engine, cache = None, {}
 
@@ -164,11 +168,15 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
         return pages
 
     extract_started = time.perf_counter()
-    pages, extracted = adaptive_extract(
-        lambda limit: save_pages(read_pages(limit), "regions"),
-        lambda text: extract_text(text, templates, kind),
-        lambda: save_pages(read_full_pages(), "full_page"),
-    )
+    if full_page:
+        pages = save_pages(read_full_pages(), "full_page")
+        extracted = extract_text("\n\n".join(page["text"] for page in pages) + "\n", templates, kind)
+    else:
+        pages, extracted = adaptive_extract(
+            lambda limit: save_pages(read_pages(limit), "regions"),
+            lambda text: extract_text(text, templates, kind),
+            lambda: save_pages(read_full_pages(), "full_page"),
+        )
     del ocr_engine
     # Gồm OCR mọi lần đọc lại của adaptive_extract và bước trích xuất.
     timings["ocr_extract_seconds"] = round(time.perf_counter() - extract_started, 3)
@@ -196,9 +204,11 @@ def main():
                         help="Thư mục lưu block và OCR (mặc định: output_flow/<tên file>)")
     parser.add_argument("--template", type=Path,
                         help="Chọn mẫu JSON thủ công (mặc định: tự nhận diện từ OCR)")
+    parser.add_argument("--full-page", action="store_true",
+                        help="OCR thẳng toàn trang, bỏ qua contour và heron")
     args = parser.parse_args()
     try:
-        run_flow(args.source, args.output_dir, args.template)
+        run_flow(args.source, args.output_dir, args.template, full_page=args.full_page)
     except (OSError, ValueError, RuntimeError, ImportError) as exc:
         print(f"Lỗi: {exc}", file=sys.stderr)
         return 1
