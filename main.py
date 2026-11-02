@@ -15,10 +15,10 @@ from adaptive_extract import adaptive_extract
 import cv2
 from extract_info import extract_text, load_templates
 from image_io import iter_images
-from ocr_image_preparation import enhance_ocr_crop
+from ocr_image_preparation import clean_image, enhance_ocr_crop, prepare_page, resize_large_image
 from page_processing import process_single_image
 from qwen_ocr import QwenOCR, TABLE_OCR_PROMPT
-from table_detection import load_detector
+from table_detection import detect_table_regions, load_detector
 
 
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "output_flow"
@@ -59,7 +59,7 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
              full_page=False):
     """OCR mọi trang rồi trích xuất toàn tài liệu theo mẫu JSON được chọn.
 
-    full_page=True: OCR thẳng toàn trang, không tìm vùng chữ/bảng (không nạp heron).
+    full_page=True: OCR một lần cả trang (đã che bảng), bảng vẫn tìm bằng heron và OCR riêng.
     """
     started = time.perf_counter()
     source = Path(source).expanduser().resolve()
@@ -82,7 +82,7 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
 
     engine_factory = QwenOCR if engine_factory is None else engine_factory
     detector_started = time.perf_counter()
-    detector = None if full_page else _shared_detector()
+    detector = _shared_detector()
     timings = {"load_detector_seconds": round(time.perf_counter() - detector_started, 3)}
     ocr_engine, cache = None, {}
 
@@ -158,6 +158,50 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
                           "detect_seconds": 0.0, "ocr_seconds": seconds})
         return pages
 
+    def read_full_pages_with_tables():
+        """Bảng (heron) OCR riêng bằng prompt bảng; phần còn lại của trang OCR một lần."""
+        nonlocal ocr_engine
+        pages = []
+        for page, (name, page_image) in enumerate(iter_images(source), 1):
+            page_started = time.perf_counter()
+            cleaned = clean_image(prepare_page(resize_large_image(page_image))[0], padding=50)
+            _, tables = detect_table_regions(cleaned, detector)
+            masked = cleaned.copy()
+            for x1, y1, x2, y2 in (table["box"] for table in tables):
+                masked[y1:y2, x1:x2] = 255
+            detect_seconds = round(time.perf_counter() - page_started, 3)
+            if ocr_engine is None:
+                ocr_engine = engine_factory()
+            print(f"OCR toàn trang {page} (che {len(tables)} bảng)", file=sys.stderr)
+
+            def read_region(region):
+                image, prompt = region
+                with Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)) as pil:
+                    if prompt is None:
+                        return ocr_engine.ocr_image(pil, max_new_tokens=OCR_MAX_NEW_TOKENS,
+                                                    max_time=OCR_MAX_TIME_SECONDS)
+                    return _ocr_image(pil, ocr_engine, prompt=prompt)
+
+            # Bảng xếp theo thứ tự từ trên xuống, nối sau phần chữ của trang.
+            tables.sort(key=lambda table: (table["box"][1], table["box"][0]))
+            regions = [(masked, None)] + [(table["crop"], TABLE_OCR_PROMPT) for table in tables]
+            with ThreadPoolExecutor(OCR_WORKERS) as pool:
+                texts = list(pool.map(read_region, regions))
+            if save_artifacts:
+                page_output = output / name
+                (page_output / "tables").mkdir(parents=True, exist_ok=True)
+                cv2.imwrite(str(page_output / "full_page.png"), masked)
+                (page_output / "full_page.ocr.txt").write_text(texts[0], encoding="utf-8")
+                for order, (table, text) in enumerate(zip(tables, texts[1:]), 1):
+                    crop = page_output / "tables" / f"table_{order:03d}.png"
+                    cv2.imwrite(str(crop), table["crop"])
+                    crop.with_suffix(".ocr.txt").write_text(text, encoding="utf-8")
+            seconds = round(time.perf_counter() - page_started, 3)
+            pages.append({"page": page, "text": "\n\n".join(texts), "seconds": seconds,
+                          "detect_seconds": detect_seconds,
+                          "ocr_seconds": round(seconds - detect_seconds, 3)})
+        return pages
+
     def save_pages(pages, prefix):
         if not pages:
             raise ValueError("Đầu vào không có ảnh/trang để xử lý.")
@@ -170,7 +214,7 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
 
     extract_started = time.perf_counter()
     if full_page:
-        pages = save_pages(read_full_pages(), "full_page")
+        pages = save_pages(read_full_pages_with_tables(), "full_page")
         extracted = extract_text("\n\n".join(page["text"] for page in pages) + "\n", templates, kind)
     else:
         pages, extracted = adaptive_extract(
@@ -206,7 +250,7 @@ def main():
     parser.add_argument("--template", type=Path,
                         help="Chọn mẫu JSON thủ công (mặc định: tự nhận diện từ OCR)")
     parser.add_argument("--full-page", action="store_true",
-                        help="OCR thẳng toàn trang, bỏ qua contour và heron")
+                        help="OCR một lần cả trang (bỏ contour), bảng vẫn OCR riêng")
     args = parser.parse_args()
     try:
         run_flow(args.source, args.output_dir, args.template, full_page=args.full_page)

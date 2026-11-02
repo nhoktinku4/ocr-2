@@ -123,7 +123,7 @@ def main():
     parser.add_argument("-o", "--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR / "batch")
     parser.add_argument("--template", type=Path, help="Mẫu JSON thủ công (mặc định: tự nhận diện)")
     parser.add_argument("--full-page", action="store_true",
-                        help="OCR thẳng toàn trang, bỏ qua contour và heron")
+                        help="OCR một lần cả trang (bỏ contour), bảng vẫn OCR riêng")
     args = parser.parse_args()
     run_batch(args.data_dir, args.output_dir, args.template, args.full_page)
     return 0
