@@ -283,17 +283,17 @@ def first(fs, name):
 
 # ----------------------------------------------------------------- chuẩn hóa giá trị
 def to_date(s):
-    """'13/10/2014' hoặc 'ngày 13 tháng 10 năm 2014' -> '2014-10-13'."""
+    """'13/10/2014' hoặc 'ngày 13 tháng 10 năm 2014' -> '13-10-2014'."""
     if not s:
         return None
     m = re.search(r"(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{4})", s) or \
         re.search(r"ngay\s*(\d{1,2})\s*thang\s*(\d{1,2})\s*nam\s*(\d{4})", norm(s))
-    if not m:                                        # OCR mất ngày: '02/1978' -> '1978-02'
+    if not m:                                        # OCR mất ngày: '02/1978' -> '02-1978'
         m2 = re.fullmatch(r"\D*(\d{1,2})\s*/\s*(\d{4})\D*", s)
-        return f"{m2[2]}-{int(m2[1]):02d}" if m2 and 1 <= int(m2[1]) <= 12 else None
+        return f"{int(m2[1]):02d}-{m2[2]}" if m2 and 1 <= int(m2[1]) <= 12 else None
     if not (1 <= int(m[1]) <= 31 and 1 <= int(m[2]) <= 12):
         return None
-    return f"{m[3]}-{int(m[2]):02d}-{int(m[1]):02d}"
+    return f"{int(m[1]):02d}-{int(m[2]):02d}-{m[3]}"
 
 
 def birth_date(s):
