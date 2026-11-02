@@ -351,6 +351,11 @@ def upper_if_mostly(s):
     return s.upper() if sum(c.isupper() for c in letters) > 0.6 * max(1, len(letters)) else s
 
 
+# 'Tỉnh Tây Ninh', 'Thành phố Hồ Chí Minh': địa danh trong ADMIN_WORDS (từ 'Hồ Chí Minh' trở đi)
+PROVINCE_END = re.compile(r"\b(?:Tỉnh|Thành phố)\s+(?:%s)\b" % "|".join(
+    map(re.escape, sorted(ADMIN_WORDS[ADMIN_WORDS.index("Hồ Chí Minh"):], key=len, reverse=True))))
+
+
 def place(s):
     """Địa chỉ: sửa dấu đơn vị hành chính / địa danh, 'Việt nam' -> 'Việt Nam'."""
     s = fix_words(s, "admin")
@@ -363,6 +368,10 @@ def place(s):
         last = max((i for i, g in enumerate(segs) if norm(g).startswith(("thanh pho", "tinh "))),
                    default=len(segs) - 1)
         s = ", ".join(segs[:last + 1] + ["Việt Nam"])
+    else:                                             # không có 'Việt Nam': cắt sau 'Tỉnh/Thành phố
+        ends = list(PROVINCE_END.finditer(s))         # <tên>' cuối cùng (chữ ký, chức danh dính sau)
+        if ends:
+            s = s[:ends[-1].end()]
     return re.sub(r"\b(\w+) \1\b", r"\1", s)       # 'Hồ Chí Minh Minh' -> 'Hồ Chí Minh'
 
 
