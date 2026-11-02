@@ -610,7 +610,7 @@ CODE_RE = re.compile(r"\b(\d{4,5})\b")          # mã ngành VSIC 4-5 chữ số
 
 def main_business(lines, tables):
     """Ngành nghề chính: dòng/hàng có chữ '(Chính)' hoặc đánh dấu ở cột 'ngành chính'.
-    Không có đánh dấu mà chỉ có 1 ngành -> lấy ngành đó; nhiều ngành không đánh dấu -> null."""
+    Không có đánh dấu -> lấy ngành ghi đầu tiên."""
     cands = []                                     # (là ngành chính?, tên, mã)
     for table in tables:
         head = [norm(c) for c in table[0]]
@@ -638,7 +638,7 @@ def main_business(lines, tables):
             # bỏ dòng ghi chú '(Ngành nghề kinh doanh có điều kiện ...)'
             if l.strip() and not norm(l).startswith(("chi tiet", "(")):
                 cands.append((bool(re.search(r"\(\s*chinh\s*\)", norm(l))), l, l))
-    main = [c for c in cands if c[0]] or (cands if len(cands) == 1 else [])
+    main = [c for c in cands if c[0]] or cands
     if not main:
         return {"ten": None, "ma_nganh": None}
     _, ten, code = main[0]
