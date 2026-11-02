@@ -38,7 +38,7 @@ class QwenOCR:
         self.max_pixels = max_pixels
         self.model = model or os.getenv("QWEN_OCR_MODEL", "qwen-ocr")
         self.client = OpenAI(
-            base_url=base_url or os.getenv("QWEN_OCR_BASE_URL", "http://127.0.0.1:8002/v1"),
+            base_url=base_url or os.getenv("QWEN_OCR_BASE_URL", "http://127.0.0.1:8006/v1"),
             api_key=os.getenv("QWEN_OCR_API_KEY", "EMPTY"),
             timeout=timeout,
             max_retries=0,

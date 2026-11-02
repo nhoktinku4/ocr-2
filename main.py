@@ -26,7 +26,7 @@ OCR_MAX_TIME_SECONDS = 120.0
 OCR_MAX_NEW_TOKENS = 2048
 SUPPORTED_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 # Số vùng gửi OCR cùng lúc; vLLM tự gom các request đồng thời thành batch.
-OCR_WORKERS = 6
+OCR_WORKERS = 10
 
 
 @lru_cache(maxsize=1)

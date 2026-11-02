@@ -85,7 +85,7 @@ def fill_missing(existing, recovered):
 
 def adaptive_extract(read_pages, extract, read_full_pages):
     """extract(text) -> dict; lỗi ValueError coi như chưa trích xuất được."""
-    pages = read_pages(5)
+    pages = read_pages(10)
     text = '\n\n'.join(page['text'] for page in pages) + '\n'
     try:
         data = extract(text)
