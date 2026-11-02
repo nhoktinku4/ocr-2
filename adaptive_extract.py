@@ -30,10 +30,14 @@ def _get(data, path):
 def missing_fields(data):
     kind = next((key for key in REQUIRED if key in data), None)
     missing = ['.'.join(path) for path in REQUIRED.get(kind, ()) if _empty(_get(data, path))]
-    # Người đại diện: đọc được một phần thì đọc lại cho đủ; trống hết (giấy không có) thì thôi.
-    for i, person in enumerate(data.get('nguoi_dai_dien') or []):
+    # Người đại diện / chủ hộ: đọc được một phần thì đọc lại cho đủ; trống hết thì thôi
+    # (chủ hộ trống hết đã bị bắt qua REQUIRED chu_ho.ho_ten).
+    people = [(f'nguoi_dai_dien[{i}]', p) for i, p in enumerate(data.get('nguoi_dai_dien') or [])]
+    people.append(('chu_ho', data.get('chu_ho')))
+    for name, person in people:
         if isinstance(person, dict) and not _empty(person):
-            missing += [f'nguoi_dai_dien[{i}].{key}' for key, value in person.items() if _empty(value)]
+            missing += [f'{name}.{key}' for key, value in person.items()
+                        if _empty(value) and f'{name}.{key}' not in missing]
     return missing
 
 
