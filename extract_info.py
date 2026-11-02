@@ -232,6 +232,8 @@ def parse_text(raw_lines):
                 table = [] if table is None else table
                 table.append(cells)
             continue
+        if not raw.strip():                 # dòng trống giữa các hàng bảng: không ngắt bảng
+            continue
         if table is not None:
             tables.append(table)
             table = None
@@ -465,7 +467,10 @@ def drop_lead_empty(row):
 def table_members(tables):
     """Bảng thành viên / cổ đông: nhận cột theo nội dung (tiêu đề OCR hay lệch ô)."""
     members, cont = [], False
-    for table in ([drop_lead_empty(r) for r in t] for t in tables):
+    # hàng toàn ô trống (đầu bảng sang trang) bỏ đi để hàng STT thành hàng đầu
+    for table in ([drop_lead_empty(r) for r in t if any(c.strip() for c in r)] for t in tables):
+        if not table:
+            continue
         head = norm(" ".join(table[0]))
         if any(k in head for k in ("thanh vien", "co dong", "ho ten", "ten")):
             rows, cont = table[1:], True
