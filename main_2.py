@@ -74,6 +74,8 @@ def _dbnet_text_regions(image, top=50, crop_ratio=0.015, padding=15, gap_x=30, g
 
 # page_processing gọi _text_regions theo tên đã import; thay tại đó, giữ nguyên các file cũ.
 page_processing._text_regions = _dbnet_text_regions
+# Kết quả riêng, không ghi đè output_flow/ của main.py.
+main.DEFAULT_OUTPUT_DIR = main.DEFAULT_OUTPUT_DIR.with_name("output_flow_2")
 
 
 if __name__ == "__main__":
