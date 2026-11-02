@@ -456,10 +456,16 @@ def is_name(c):
             and 2 <= len(c.split()) <= 6 and norm(c) not in NATIONS)
 
 
+def drop_lead_empty(row):
+    """'|  | 2 | TÊN |...': OCR thêm ô trống trước cột STT -> bỏ để STT về cột 0."""
+    k = next((i for i, c in enumerate(row) if c.strip()), 0)
+    return row[k:] if k and re.fullmatch(r"\d{1,3}", row[k].strip()) else row
+
+
 def table_members(tables):
     """Bảng thành viên / cổ đông: nhận cột theo nội dung (tiêu đề OCR hay lệch ô)."""
     members, cont = [], False
-    for table in tables:
+    for table in ([drop_lead_empty(r) for r in t] for t in tables):
         head = norm(" ".join(table[0]))
         if any(k in head for k in ("thanh vien", "co dong", "ho ten", "ten")):
             rows, cont = table[1:], True
