@@ -143,27 +143,6 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
                           "ocr_seconds": round(seconds - detect_seconds, 3)})
         return pages
 
-    def read_full_pages():
-        nonlocal ocr_engine
-        pages = []
-        for page, (name, page_image) in enumerate(iter_images(source), 1):
-            page_started = time.perf_counter()
-            if ocr_engine is None:
-                ocr_engine = engine_factory()
-            print(f"OCR toàn trang {page}", file=sys.stderr)
-            with Image.fromarray(cv2.cvtColor(page_image, cv2.COLOR_BGR2RGB)) as image:
-                text = ocr_engine.ocr_image(
-                    image, max_new_tokens=OCR_MAX_NEW_TOKENS, max_time=OCR_MAX_TIME_SECONDS,
-                )
-            page_output = output / name
-            if save_artifacts:
-                page_output.mkdir(parents=True, exist_ok=True)
-                (page_output / "full_page.ocr.txt").write_text(text, encoding="utf-8")
-            seconds = round(time.perf_counter() - page_started, 3)
-            pages.append({"page": page, "text": text, "seconds": seconds,
-                          "detect_seconds": 0.0, "ocr_seconds": seconds})
-        return pages
-
     def read_full_pages_with_tables():
         """Bảng (heron) OCR riêng bằng prompt bảng; phần còn lại của trang OCR một lần."""
         nonlocal ocr_engine
@@ -226,7 +205,7 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
         pages, extracted = adaptive_extract(
             lambda limit: save_pages(read_pages(limit), "regions"),
             lambda text: extract_text(text, templates, kind),
-            lambda: save_pages(read_full_pages(), "full_page"),
+            lambda: save_pages(read_full_pages_with_tables(), "full_page"),
         )
     del ocr_engine
     # Gồm OCR mọi lần đọc lại của adaptive_extract và bước trích xuất.
