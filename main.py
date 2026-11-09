@@ -19,7 +19,7 @@ from adaptive_extract import adaptive_extract
 import cv2
 from extract_info import extract_text, load_templates
 from image_io import iter_images
-from ocr_image_preparation import clean_image, enhance_ocr_crop, prepare_page, resize_large_image
+from ocr_image_preparation import enhance_ocr_crop
 from page_processing import process_single_image
 from qwen_ocr import QwenOCR, TABLE_OCR_PROMPT
 from table_detection import detect_table_regions, load_detector
@@ -144,14 +144,16 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
         return pages
 
     def read_full_pages_with_tables():
-        """Bảng (heron) OCR riêng bằng prompt bảng; phần còn lại của trang OCR một lần."""
+        """Bảng (heron) OCR riêng bằng prompt bảng; phần còn lại của trang OCR một lần.
+
+        Trang dùng thẳng ảnh gốc, không tiền xử lý; bảng cũng tìm trên ảnh gốc để box che khớp.
+        """
         nonlocal ocr_engine
         pages = []
         for page, (name, page_image) in enumerate(iter_images(source), 1):
             page_started = time.perf_counter()
-            cleaned = clean_image(prepare_page(resize_large_image(page_image))[0], padding=50)
-            _, tables = detect_table_regions(cleaned, detector)
-            masked = cleaned.copy()
+            _, tables = detect_table_regions(page_image, detector)
+            masked = page_image.copy()
             for x1, y1, x2, y2 in (table["box"] for table in tables):
                 masked[y1:y2, x1:x2] = 255
             detect_seconds = round(time.perf_counter() - page_started, 3)
