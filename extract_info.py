@@ -655,37 +655,6 @@ def main_business(lines, tables):
     return {"ten": text(ten.strip(" -;:.,")) or None, "ma_nganh": m[1] if m else None}
 
 
-def household_members(tables):
-    """Bảng thành viên hộ gia đình: nhận cột theo nội dung như bảng thành viên công ty."""
-    out = []
-    for table in tables:
-        head = norm(" ".join(table[0]))
-        if "nganh" in head or not any(k in head for k in ("thanh vien", "ho ten", "ho va ten")):
-            continue
-        for row in table[1:]:
-            m = {}
-            for c in (clean(c).strip("*_ ") for c in row[1:]):
-                if not c:
-                    continue
-                if birth_date(c) and "ngay_sinh" not in m:
-                    m["ngay_sinh"] = birth_date(c)
-                elif norm(c) in ("nam", "nu") and "gioi_tinh" not in m:
-                    m["gioi_tinh"] = "Nam" if norm(c) == "nam" else "Nữ"
-                elif norm(c) in NATIONS and "quoc_tich" not in m:
-                    m["quoc_tich"] = NATIONS[norm(c)]
-                elif ID_RE.match(c.replace(" ", "")) and "so_giay_to" not in m:
-                    m["so_giay_to"] = c.replace(" ", "")
-                elif "ho_ten" not in m and is_name(c):
-                    m["ho_ten"] = c
-                elif (re.search(r"\d", c) or ADDR_RE.search(norm(c))) and "dia_chi_thuong_tru" not in m:
-                    m["dia_chi_thuong_tru"] = place(c)
-                elif "ho_ten" not in m and c.upper() == c:
-                    m["ho_ten"] = c
-            if m.get("ho_ten"):
-                out.append(m)
-    return out
-
-
 def extract_hkd(lines, tables):
     fs = fields(lines)
     n = [norm(l) for l in lines]
@@ -750,7 +719,6 @@ def extract_hkd(lines, tables):
         "nganh_nghe_chinh": main_business(lines, tables),
         "von_kinh_doanh": money_text(von),
         "chu_ho": chu,
-        "thanh_vien_ho": household_members(tables),
     }
 
 

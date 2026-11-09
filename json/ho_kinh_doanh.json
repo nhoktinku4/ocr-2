@@ -36,15 +36,5 @@
     "noi_cap": null,
     "dia_chi_thuong_tru": null,
     "dia_chi_lien_lac": null
-  },
-  "thanh_vien_ho": [
-    {
-      "ho_ten": null,
-      "ngay_sinh": null,
-      "gioi_tinh": null,
-      "quoc_tich": null,
-      "so_giay_to": null,
-      "dia_chi_thuong_tru": null
-    }
-  ]
+  }
 }
