@@ -247,6 +247,12 @@ def parse_text(raw_lines):
     return join_lines(lines), tables
 
 
+def starts_with_label(line):
+    """'ĐĂNG KÝ THAY ĐỔI LẦN THỨ 10, ...': mở đầu bằng nhãn dài dù OCR mất dấu ':'."""
+    n = norm(line)
+    return any(len(alias) > 10 and n.startswith(alias) for alias, _ in ALIASES)
+
+
 def join_lines(lines, wrap_len=40):
     """Nối dòng tiếp nối vào dòng có nhãn:
     - nhãn kết thúc bằng ':' (giá trị nằm ở dòng sau);
@@ -255,6 +261,7 @@ def join_lines(lines, wrap_len=40):
     for line in lines:
         prev = out[-1] if out else ""
         cont = (prev and not is_label(line) and not SECTION.match(line) and ":" in prev
+                and not starts_with_label(line)                      # nhãn OCR mất ':' 
                 and not (re.match(r"\s*\d{1,2}\s*\.", line)          # "3..." không phải phần
                          and re.match(r"(?i)\s*(fax|e-?mail|web)", prev))  # sau của fax/email/web
                 and (prev.endswith(":") or len(prev) >= wrap_len)
@@ -275,6 +282,17 @@ def fields(lines):
         if f:
             out.append((f, val.strip(" ,;.") or None, i))
     return out
+
+
+def after_change_label(lines):
+    """Dòng 'Đăng ký thay đổi lần thứ 10, ngày ...' OCR mất ':' (hay viết HOA, bị nối vào dòng
+    'Đăng ký lần đầu') -> phần sau cụm nhãn, cắt theo chữ chuẩn hóa nên không lệ thuộc hoa/thường."""
+    for line in lines:
+        n, pos = norm_map(line)
+        m = re.search(r"dang ky thay doi(?: lan thu)?\s*:?", n)
+        if m:
+            return line[pos[m.end() - 1] + 1:]
+    return None
 
 
 def first(fs, name):
@@ -544,8 +562,7 @@ def extract(lines, tables):
             tinh = tinh[:1].upper() + tinh[1:]
             break
 
-    thay_doi = first(fs, "thay_doi") or next(
-        (l.split("thứ", 1)[-1] for l, k in zip(lines, n) if "dang ky thay doi" in k), None)
+    thay_doi = first(fs, "thay_doi") or after_change_label(lines)
     lan = re.match(r"\s*(\d+)", thay_doi or "")
     von = first(fs, "von") or next((lines[i + 1] for i, l in enumerate(n)
                                     if "von dieu le" in l and i + 1 < len(lines)), None)
@@ -671,8 +688,7 @@ def extract_hkd(lines, tables):
             phong = r[pos[p.start()]:]
     fmt_cap = lambda s: fix_words(re.sub(r"\s*-\s*", " - ", s.strip(" ,."))) if s else None
 
-    thay_doi = first(fs, "thay_doi") or next(
-        (l.split("thứ", 1)[-1] for l, k in zip(lines, n) if "dang ky thay doi" in k), None)
+    thay_doi = first(fs, "thay_doi") or after_change_label(lines)
     lan = re.match(r"\s*(\d+)", thay_doi or "")
     def code(s):                     # '8005620026', mẫu cũ có chữ: '53K8003560', '53KHB004296'
         m = re.search(r"[0-9A-Z][0-9A-Z\s]{7,}[0-9]", (s or "").upper())
