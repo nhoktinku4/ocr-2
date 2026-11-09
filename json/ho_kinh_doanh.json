@@ -14,7 +14,7 @@
   "ten_ho_kinh_doanh": null,
   "dia_diem_kinh_doanh": {
     "dia_chi": null,
-    "dien_thoai": [],
+    "dien_thoai": null,
     "fax": null,
     "email": null,
     "website": null
@@ -44,7 +44,7 @@
       "gioi_tinh": null,
       "quoc_tich": null,
       "so_giay_to": null,
-      "dia_chi": null
+      "dia_chi_thuong_tru": null
     }
   ]
 }

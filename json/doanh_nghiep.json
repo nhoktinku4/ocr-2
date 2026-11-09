@@ -18,7 +18,7 @@
   },
   "tru_so_chinh": {
     "dia_chi": null,
-    "dien_thoai": [],
+    "dien_thoai": null,
     "fax": null,
     "email": null,
     "website": null
@@ -31,7 +31,7 @@
       "ngay_sinh": null,
       "dan_toc": null,
       "quoc_tich": null,
-      "dia_chi": null,
+      "dia_chi_thuong_tru": null,
       "phan_von_gop": null,
       "ty_le": null,
       "loai_giay_to": null,

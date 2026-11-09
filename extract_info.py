@@ -336,6 +336,13 @@ def phones(s):
     return out
 
 
+def phone_str(s):
+    """Giữ nguyên chuỗi số điện thoại như trên giấy ('09... - 09...'),
+    chỉ bỏ khoảng trắng/ký tự rác ở 2 đầu. None nếu không có số nào đủ dài."""
+    s = re.sub(r"\s+", " ", s or "").strip(" .,;:-")
+    return s if phones(s) else None
+
+
 def upper_if_mostly(s):
     """'CôNG TY' -> 'CÔNG TY' (OCR lẫn hoa/thường)."""
     if not s:
@@ -445,7 +452,7 @@ def person(p, rep):
     if rep:
         d.update(chuc_danh=text(p.get("chuc_danh")), dia_chi_thuong_tru=place(p.get("thuong_tru")))
     else:
-        d.update(dia_chi=place(p.get("thuong_tru")), phan_von_gop=money_text(p.get("phan_von")),
+        d.update(dia_chi_thuong_tru=place(p.get("thuong_tru")), phan_von_gop=money_text(p.get("phan_von")),
                  ty_le=to_percent(p.get("ty_le")))
     return d
 
@@ -505,8 +512,8 @@ def table_members(tables):
                     m["ty_le"] = to_percent(c)
                 elif "ho_ten" not in m and is_name(c):
                     m["ho_ten"] = c
-                elif (re.search(r"\d", c) or ADDR_RE.search(norm(c))) and "dia_chi" not in m:
-                    m["dia_chi"] = place(c)
+                elif (re.search(r"\d", c) or ADDR_RE.search(norm(c))) and "dia_chi_thuong_tru" not in m:
+                    m["dia_chi_thuong_tru"] = place(c)
                 elif "ho_ten" not in m and c.upper() == c:
                     m["ho_ten"] = c
                 else:
@@ -580,7 +587,7 @@ def extract(lines, tables):
         },
         "tru_so_chinh": {
             "dia_chi": addr,
-            "dien_thoai": phones(first(fs, "dien_thoai")),
+            "dien_thoai": phone_str(first(fs, "dien_thoai")),
             "fax": (phones(first(fs, "fax")) or [None])[0],
             "email": email(first(fs, "email")),
             "website": website(first(fs, "website")),
@@ -670,8 +677,8 @@ def household_members(tables):
                     m["so_giay_to"] = c.replace(" ", "")
                 elif "ho_ten" not in m and is_name(c):
                     m["ho_ten"] = c
-                elif (re.search(r"\d", c) or ADDR_RE.search(norm(c))) and "dia_chi" not in m:
-                    m["dia_chi"] = place(c)
+                elif (re.search(r"\d", c) or ADDR_RE.search(norm(c))) and "dia_chi_thuong_tru" not in m:
+                    m["dia_chi_thuong_tru"] = place(c)
                 elif "ho_ten" not in m and c.upper() == c:
                     m["ho_ten"] = c
             if m.get("ho_ten"):
@@ -735,7 +742,7 @@ def extract_hkd(lines, tables):
         "ten_ho_kinh_doanh": hkd_name(first(fs, "ten_hkd") or section_text(lines, "ten ho kinh doanh")),
         "dia_diem_kinh_doanh": {
             "dia_chi": place(first(fs, "dia_diem") or section_text(lines, "dia diem", "dia chi")),
-            "dien_thoai": phones(first(fs, "dien_thoai")),
+            "dien_thoai": phone_str(first(fs, "dien_thoai")),
             "fax": (phones(first(fs, "fax")) or [None])[0],
             "email": email(first(fs, "email")),
             "website": website(first(fs, "website")),
