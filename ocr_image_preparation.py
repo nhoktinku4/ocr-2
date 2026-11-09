@@ -21,6 +21,14 @@ def resize_large_image(cv2_img, max_pixels=MAX_PREPROCESS_PIXELS):
     return cv2.resize(cv2_img, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
 
+def limit_ocr_pixels(image, *, max_pixels=MAX_OCR_PIXELS):
+    """Chỉ thu nhỏ ảnh về giới hạn pixel của model, không xử lý gì khác (chế độ ảnh gốc)."""
+    rgb = np.asarray(image.convert("RGB"))
+    if not rgb.shape[0] or not rgb.shape[1]:
+        raise ValueError("Ảnh OCR không được rỗng.")
+    return Image.fromarray(resize_large_image(rgb, max_pixels))
+
+
 def enhance_ocr_crop(image, *, max_pixels=MAX_OCR_PIXELS):
     """Cải thiện ảnh cắt cho OCR, giữ màu và giới hạn số pixel đầu vào model."""
     if isinstance(max_pixels, bool) or not isinstance(max_pixels, int) or max_pixels <= 0:

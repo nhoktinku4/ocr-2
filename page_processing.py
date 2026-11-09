@@ -54,11 +54,12 @@ def process_single_image(image_bgr, stem_name, output_dir,
                          crop_blocks=True, padding=PADDING, save=False, largest_boxes=None,
                          *, detector=None, model_path=LAYOUT_MODEL, iou_threshold=0.1,
                          conf=0.25, device=None, table_padding=TABLE_PADDING,
-                         include_crops=False):
+                         include_crops=False, preprocess=True):
     """Phát hiện tất cả bảng trước khi lấy các khối chữ không giao với bảng.
 
     largest_boxes chỉ giới hạn vùng chữ ngoài bảng; mọi bảng đều được loại trừ.
     table_padding chỉ mở rộng crop bảng để OCR; vùng tô trắng dùng box không padding.
+    preprocess=False: dùng thẳng ảnh gốc (không resize, xoay thẳng, xóa nền, cắt viền).
     """
     if padding < 0 or table_padding < 0:
         raise ValueError("padding/table_padding phải >= 0.")
@@ -69,9 +70,12 @@ def process_single_image(image_bgr, stem_name, output_dir,
     output = Path(output_dir) / stem_name
     timings = {}
     timed = _timer(timings)
-    resized = timed("resize_ms", resize_large_image, image_bgr)
-    prepared, skew_angle = timed("prepare_ms", prepare_page, resized)
-    cleaned = timed("clean_ms", clean_image, prepared, padding=padding)
+    if preprocess:
+        resized = timed("resize_ms", resize_large_image, image_bgr)
+        prepared, skew_angle = timed("prepare_ms", prepare_page, resized)
+        cleaned = timed("clean_ms", clean_image, prepared, padding=padding)
+    else:
+        cleaned, skew_angle = image_bgr, 0.0
     detected_count, table_blocks = timed(
         "table_detect_ms", detect_table_regions, cleaned, detector, padding=table_padding,
         iou_threshold=iou_threshold, conf=conf,

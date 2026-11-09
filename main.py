@@ -19,7 +19,7 @@ from adaptive_extract import adaptive_extract
 import cv2
 from extract_info import extract_text, load_templates
 from image_io import iter_images
-from ocr_image_preparation import enhance_ocr_crop
+from ocr_image_preparation import enhance_ocr_crop, limit_ocr_pixels
 from page_processing import process_single_image
 from qwen_ocr import QwenOCR, TABLE_OCR_PROMPT
 from table_detection import detect_table_regions, load_detector
@@ -45,27 +45,29 @@ def _write_json(path, data):
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _ocr_image(image, engine, *, prompt=None):
-    """Cải thiện ảnh block rồi OCR nguyên ảnh một lần."""
+def _ocr_image(image, engine, *, prompt=None, raw=False):
+    """Cải thiện ảnh block rồi OCR nguyên ảnh một lần; raw=True chỉ giới hạn số pixel."""
     options = {"max_new_tokens": OCR_MAX_NEW_TOKENS, "max_time": OCR_MAX_TIME_SECONDS}
     if prompt is not None:
         options["prompt"] = prompt
-    return engine.ocr_image(enhance_ocr_crop(image), **options)
+    image = limit_ocr_pixels(image) if raw else enhance_ocr_crop(image)
+    return engine.ocr_image(image, **options)
 
 
-def _ocr_crop(crop, engine, *, prompt=None):
+def _ocr_crop(crop, engine, *, prompt=None, raw=False):
     """OCR crop trên đĩa và lưu text cạnh file ảnh."""
     with Image.open(crop) as crop_image:
-        text = _ocr_image(crop_image, engine, prompt=prompt)
+        text = _ocr_image(crop_image, engine, prompt=prompt, raw=raw)
     crop.with_suffix(".ocr.txt").write_text(text, encoding="utf-8")
     return text
 
 
 def run_flow(source, output=None, template=None, *, engine_factory=None, save_artifacts=True,
-             full_page=False):
+             full_page=False, raw=False):
     """OCR mọi trang rồi trích xuất toàn tài liệu theo mẫu JSON được chọn.
 
     full_page=True: OCR một lần cả trang (đã che bảng), bảng vẫn tìm bằng heron và OCR riêng.
+    raw=True: dùng ảnh gốc, bỏ mọi bước xử lý ảnh (chỉ thu nhỏ ảnh cắt về giới hạn của model).
     """
     started = time.perf_counter()
     source = Path(source).expanduser().resolve()
@@ -100,7 +102,8 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
             with redirect_stdout(sys.stderr):
                 report = process_single_image(page_image, name, output, detector=detector,
                                               save=save_artifacts, include_crops=not save_artifacts,
-                                              largest_boxes=largest_boxes, padding=50)
+                                              largest_boxes=largest_boxes, padding=50,
+                                              preprocess=not raw)
             detect_seconds = round(time.perf_counter() - page_started, 3)
             # Chỉ đọc các vùng vừa phát hiện trong report, bỏ qua crop cũ trên đĩa.
             regions = []
@@ -127,10 +130,10 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
                 print(f"OCR trang {page}, {label} {block['order']}", file=sys.stderr)
                 prompt = TABLE_OCR_PROMPT if block_key == "table_blocks" else None
                 if save_artifacts:
-                    text = _ocr_crop(crop, ocr_engine, prompt=prompt)
+                    text = _ocr_crop(crop, ocr_engine, prompt=prompt, raw=raw)
                 else:
                     with Image.fromarray(cv2.cvtColor(block["crop"], cv2.COLOR_BGR2RGB)) as image:
-                        text = _ocr_image(image, ocr_engine, prompt=prompt)
+                        text = _ocr_image(image, ocr_engine, prompt=prompt, raw=raw)
                 cache[cache_key] = text
                 return text
 
@@ -167,7 +170,7 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
                     if prompt is None:
                         return ocr_engine.ocr_image(pil, max_new_tokens=OCR_MAX_NEW_TOKENS,
                                                     max_time=OCR_MAX_TIME_SECONDS)
-                    return _ocr_image(pil, ocr_engine, prompt=prompt)
+                    return _ocr_image(pil, ocr_engine, prompt=prompt, raw=raw)
 
             # Bảng xếp theo thứ tự từ trên xuống, nối sau phần chữ của trang.
             tables.sort(key=lambda table: (table["box"][1], table["box"][0]))
@@ -229,7 +232,7 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
     return result
 
 
-def run_batch(data_dir, output_dir, template=None, full_page=False):
+def run_batch(data_dir, output_dir, template=None, full_page=False, raw=False):
     data_dir = Path(data_dir).expanduser().resolve()
     output_dir = Path(output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -262,7 +265,7 @@ def run_batch(data_dir, output_dir, template=None, full_page=False):
         doc_dir = output_dir / name
         try:
             result = run_flow(source, doc_dir, template, engine_factory=engine_factory,
-                              save_artifacts=False, full_page=full_page)
+                              save_artifacts=False, full_page=full_page, raw=raw)
             doc_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, doc_dir / source.name)
             _write_json(doc_dir / "extract.json", result["extracted"])
@@ -342,13 +345,16 @@ def main():
                         help="Chọn mẫu JSON thủ công (mặc định: tự nhận diện từ OCR)")
     parser.add_argument("--full-page", action="store_true",
                         help="OCR một lần cả trang (bỏ contour), bảng vẫn OCR riêng")
+    parser.add_argument("--raw", action="store_true",
+                        help="Dùng ảnh gốc, không xử lý ảnh (xoay thẳng, xóa nền, làm nét...)")
     args = parser.parse_args()
     if args.source.is_dir():
         run_batch(args.source, args.output_dir or DEFAULT_OUTPUT_DIR / "batch",
-                  args.template, args.full_page)
+                  args.template, args.full_page, args.raw)
         return 0
     try:
-        run_flow(args.source, args.output_dir, args.template, full_page=args.full_page)
+        run_flow(args.source, args.output_dir, args.template, full_page=args.full_page,
+                 raw=args.raw)
     except (OSError, ValueError, RuntimeError, ImportError) as exc:
         print(f"Lỗi: {exc}", file=sys.stderr)
         return 1
