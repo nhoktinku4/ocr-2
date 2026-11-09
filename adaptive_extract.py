@@ -14,7 +14,8 @@ REQUIRED = {
 # Thành viên: có 2 mẫu, mỗi mẫu được phép trống các trường riêng, còn lại phải đủ.
 MEMBER_OPTIONAL = (
     {'phan_von_gop', 'ty_le', 'ghi_chu'},
-    {'gioi_tinh', 'ngay_sinh', 'dan_toc', 'ghi_chu', 'ngay_cap', 'noi_cap', 'dia_chi_lien_lac'},
+    {'gioi_tinh', 'ngay_sinh', 'dan_toc', 'quoc_tich', 'ghi_chu', 'ngay_cap', 'noi_cap',
+     'dia_chi_lien_lac'},
 )
 
 
