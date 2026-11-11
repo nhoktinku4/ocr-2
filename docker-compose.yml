@@ -40,8 +40,7 @@ services:
       --served-model-name ${QWEN_OCR_MODEL:-qwen-ocr}
       --port 8007
       --quantization bitsandbytes
-    # --quantization bitsandbytes: lượng tử hóa 4-bit lúc nạp từ model gốc (bf16/fp16),
-    # không cần checkpoint đã quantize sẵn. Model đã là AWQ/GPTQ thì bỏ dòng này.
+      --gpu-memory-utilization 0.2
     ports:
       - "8007:8007"
     ipc: host
