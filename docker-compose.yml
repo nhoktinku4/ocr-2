@@ -1,8 +1,8 @@
-# Đặt file này ở thư mục cha, cạnh source/ (code), qwen/ (model vLLM), docling-layout-heron/, data/ (PDF/ảnh).
-# Chạy batch cả thư mục ./data (vLLM chạy sẵn trên máy, cổng 8002):
-#   docker compose run --rm --build ocr
-# Một file / tham số khác (đường dẫn trong container, /data = DATA_DIR):
-#   docker compose run --rm ocr /data/a.pdf
+# Đặt file này ở thư mục cha, cạnh source/ (code), qwen/ (model vLLM), docling-layout-heron/.
+# File PDF/ảnh đặt trong source/ (container thấy source/ là /app, chạy từ /app).
+# Chạy 1 file hoặc cả thư mục (vLLM chạy sẵn trên máy, cổng 8002):
+#   docker compose run --rm --build ocr input/a.pdf
+#   docker compose run --rm ocr input
 # Chạy kèm vLLM trong compose (cần GPU NVIDIA + nvidia-container-toolkit):
 #   docker compose --profile vllm up -d vllm
 #   QWEN_OCR_BASE_URL=http://vllm:8002/v1 docker compose run --rm ocr
@@ -22,8 +22,6 @@ services:
     volumes:
       # Code mount từ máy 
       - ${SOURCE_DIR:-./source}:/app
-      # Dữ liệu đầu vào (PDF/ảnh)
-      - ${DATA_DIR:-./data}:/data:ro
       # Model docling-layout-heron đã tải sẵn 
       - ${HERON_MODEL_DIR:-./docling-layout-heron}:/app/docling-layout-heron:ro
     deploy:

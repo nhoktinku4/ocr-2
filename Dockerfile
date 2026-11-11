@@ -24,8 +24,7 @@ RUN pip install --no-cache-dir \
 
 ENV QWEN_OCR_BASE_URL=http://host.docker.internal:8002/v1 \
     PYTHONUNBUFFERED=1
-# Chạy batch: main.py đọc /data (DEFAULT_DATA_DIR = ../data so với /app); kết quả trích xuất ghi vào log (/app/logs).
-# Đổi đầu vào/tham số: docker compose run --rm ocr <file hoặc thư mục>
+# Chạy: docker compose run --rm ocr <file hoặc thư mục trong source/>; kết quả trích xuất ghi vào log (/app/logs).
 # Batch không mở cổng nên không có /health; kiểm tra server OCR (vLLM) còn trả lời GET /models.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import os, urllib.request; urllib.request.urlopen(os.environ['QWEN_OCR_BASE_URL'].rstrip('/') + '/models', timeout=4)" || exit 1

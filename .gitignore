@@ -5,3 +5,4 @@ docling-layout-heron/
 
 .claude/settings.local.json
 logs/
+input/
