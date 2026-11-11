@@ -64,13 +64,9 @@ def subtract_boxes(box, excluded_boxes):
     return remaining
 
 
-def _text_regions(image, top=20, crop_ratio=0.015, padding=15, gap_x=30, gap_y=20,
-                  largest_boxes=None, exclude_boxes=None, merge=False):
-    """Tìm vùng chữ; exclude_boxes loại bảng khỏi cả mask và box cuối cùng.
-
-    merge=False: mỗi contour ngoài cùng là một vùng, cắt sát bounding rect, không padding
-    (giống 12_outer_contours_crops trong contour_debug.py). merge=True: gộp box + padding.
-    """
+def _text_regions(image, top=50, crop_ratio=0.015, padding=15, gap_x=30, gap_y=20,
+                  largest_boxes=None, exclude_boxes=None):
+    """Tìm vùng chữ; exclude_boxes loại bảng khỏi cả mask và box cuối cùng."""
     if largest_boxes is not None and largest_boxes <= 0:
         raise ValueError("largest_boxes phải là số nguyên dương")
     h, w = image.shape[:2]
@@ -109,10 +105,7 @@ def _text_regions(image, top=20, crop_ratio=0.015, padding=15, gap_x=30, gap_y=2
     contours = sorted((c for i, c in enumerate(contours) if hierarchy[0][i][3] == -1),
                       key=lambda c: cv2.arcLength(c, True), reverse=True)[:top]
     boxes = [(x, y, x + bw, y + bh) for x, y, bw, bh in map(cv2.boundingRect, contours)]
-    if merge:
-        boxes = merge_boxes(boxes, gap_x, gap_y)
-    else:
-        padding = 0
+    boxes = merge_boxes(boxes, gap_x, gap_y)
     if largest_boxes is not None and not excluded:
         # Chọn theo diện tích sau khi gộp, trước khi thêm padding.
         boxes = _largest_regions(boxes, largest_boxes)
