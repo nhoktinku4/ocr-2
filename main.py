@@ -22,7 +22,6 @@ from image_io import iter_images
 from ocr_image_preparation import enhance_ocr_crop, limit_ocr_pixels
 from page_processing import process_single_image
 from qwen_ocr import QwenOCR, TABLE_OCR_PROMPT
-from layout_text import render_layout
 from table_detection import detect_table_regions, load_detector
 
 
@@ -147,7 +146,6 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
                       "box": [int(v) for v in region[0]["box"]], "text": text}
                      for region, text in zip(regions, texts)]
             pages.append({"page": page, "text": "\n\n".join(texts), "regions": boxes,
-                          "size": report["cleaned_size"],
                           "seconds": seconds, "detect_seconds": detect_seconds,
                           "ocr_seconds": round(seconds - detect_seconds, 3)})
         return pages
@@ -214,9 +212,6 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
                     lines.append(f"--- page={page['page']} type={region['type']}"
                                  f" box=[{x1},{y1},{x2},{y2}]\n{region['text']}")
             (output / f"{prefix}.boxes.txt").write_text("\n\n".join(lines) + "\n", encoding="utf-8")
-            layout = "\n\n\f".join(render_layout(page.get("regions", []), page["size"])
-                                      for page in pages if "size" in page)
-            (output / f"{prefix}.layout.txt").write_text(layout + "\n", encoding="utf-8")
         return pages
 
     extract_started = time.perf_counter()
