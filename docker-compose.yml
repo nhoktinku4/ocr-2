@@ -2,7 +2,7 @@
 # Chạy batch cả thư mục ./data (vLLM chạy sẵn trên máy, cổng 8002):
 #   docker compose run --rm --build ocr
 # Một file / tham số khác (đường dẫn trong container, /data = DATA_DIR):
-#   docker compose run --rm ocr /data/a.pdf --full-page
+#   docker compose run --rm ocr /data/a.pdf
 # Chạy kèm vLLM trong compose (cần GPU NVIDIA + nvidia-container-toolkit):
 #   docker compose --profile vllm up -d vllm
 #   QWEN_OCR_BASE_URL=http://vllm:8002/v1 docker compose run --rm ocr

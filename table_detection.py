@@ -5,11 +5,10 @@ from pathlib import Path
 
 import cv2
 
-from box_detection import _largest_regions, sort_boxes
+from box_detection import sort_boxes
 
 
 LAYOUT_MODEL = Path(__file__).resolve().parent / "docling-layout-heron"
-PADDING = 30
 TABLE_PADDING = 30
 
 
@@ -85,11 +84,10 @@ def merge_table_boxes(boxes, iou_threshold=0.1):
             return boxes
 
 
-def detect_table_regions(image, detector, padding=TABLE_PADDING, iou_threshold=0.1,
-                         largest_boxes=None, conf=0.25):
+def detect_table_regions(image, detector, padding=TABLE_PADDING, iou_threshold=0.1, conf=0.25):
     """Box dùng để che bảng không có padding; chỉ crop OCR được mở rộng."""
-    if padding < 0 or (largest_boxes is not None and largest_boxes <= 0):
-        raise ValueError("padding phải >= 0; largest_boxes phải là số nguyên dương.")
+    if padding < 0:
+        raise ValueError("padding phải >= 0.")
     if not 0 <= conf <= 1 or not 0 <= iou_threshold <= 1:
         raise ValueError("conf/iou_threshold phải nằm trong khoảng 0 đến 1.")
     # Làm tròn ra ngoài để không bỏ sót mép bảng khi tạo mask nguyên pixel.
@@ -97,8 +95,6 @@ def detect_table_regions(image, detector, padding=TABLE_PADDING, iou_threshold=0
              for x1, y1, x2, y2 in detector(image, conf=conf)]
     detected_count = len(boxes)
     boxes = merge_table_boxes(boxes, iou_threshold)
-    if largest_boxes is not None:
-        boxes = _largest_regions(boxes, largest_boxes)
     h, w = image.shape[:2]
     blocks = []
     for x1, y1, x2, y2 in sort_boxes(boxes):
