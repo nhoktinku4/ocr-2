@@ -695,9 +695,9 @@ def extract_hkd(lines, tables):
         return re.sub(r"\s", "", m[0]) if m else None
     ma = code(first(fs, "ma_so_hkd") or first(fs, "ma_so"))
     so_dk = code(first(fs, "so_dk_hkd"))
-    if not so_dk:                                      # mẫu cũ: 'Số: 53KHB004296' ở đầu giấy
-        so_dk = next((code(r.partition(":")[2]) for l, r in zip(n[:title + 3], lines)
-                      if re.match(r"so\s*:", l)), None)
+    if not so_dk:                    # mẫu cũ ở đầu giấy: 'Số: 53KHB004296', 'Số 45F8006535'
+        so_dk = next((code(m[1]) for l in n[:title + 3]
+                      if (m := re.match(r"so\s*:?\s*([0-9a-z][0-9a-z ]{6,}[0-9])\s*$", l))), None)
 
     def reg_date(label):             # 'Đăng ký lần đầu, ngày 5 tháng 6 năm 2020' (không có ':')
         return to_date(first(fs, label)) or next(
