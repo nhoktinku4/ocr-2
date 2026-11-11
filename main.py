@@ -141,8 +141,12 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
             with ThreadPoolExecutor(OCR_WORKERS) as pool:
                 texts = list(pool.map(read_region, regions))
             seconds = round(time.perf_counter() - page_started, 3)
-            pages.append({"page": page, "text": "\n\n".join(texts), "seconds": seconds,
-                          "detect_seconds": detect_seconds,
+            # Tọa độ xyxy theo ảnh đã làm sạch (coordinate_space của report).
+            boxes = [{"type": "table" if region[1] == "table_blocks" else "text",
+                      "box": [int(v) for v in region[0]["box"]], "text": text}
+                     for region, text in zip(regions, texts)]
+            pages.append({"page": page, "text": "\n\n".join(texts), "regions": boxes,
+                          "seconds": seconds, "detect_seconds": detect_seconds,
                           "ocr_seconds": round(seconds - detect_seconds, 3)})
         return pages
 
@@ -200,6 +204,14 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
         _write_json(output / f"{prefix}.ocr.json", {"source": str(source), "pages": pages})
         text = "\n\n".join(page["text"] for page in pages) + "\n"
         (output / f"{prefix}.ocr.txt").write_text(text, encoding="utf-8")
+        if any("regions" in page for page in pages):
+            lines = []
+            for page in pages:
+                for region in page.get("regions", []):
+                    x1, y1, x2, y2 = region["box"]
+                    lines.append(f"--- page={page['page']} type={region['type']}"
+                                 f" box=[{x1},{y1},{x2},{y2}]\n{region['text']}")
+            (output / f"{prefix}.boxes.txt").write_text("\n\n".join(lines) + "\n", encoding="utf-8")
         return pages
 
     extract_started = time.perf_counter()
