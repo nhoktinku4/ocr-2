@@ -1,5 +1,5 @@
 """OCR tối đa 5 vùng chữ, dùng toàn trang để bổ sung trường còn thiếu."""
-import sys
+from logger import logger
 
 
 # Trường bắt buộc theo từng loại giấy; đường dẫn là các khóa lồng nhau.
@@ -97,7 +97,7 @@ def adaptive_extract(read_pages, extract, read_full_pages):
         missing = missing_fields(data)
         if not missing:
             return pages, data
-    print(f"Còn thiếu {', '.join(missing)}; OCR toàn trang", file=sys.stderr)
+    logger.info(f"Còn thiếu {', '.join(missing)}; OCR toàn trang")
     pages = read_full_pages()
     text = '\n\n'.join(page['text'] for page in pages) + '\n'
     recovered = extract(text)
@@ -108,5 +108,5 @@ def adaptive_extract(read_pages, extract, read_full_pages):
         data = fill_missing(data, recovered)
     remaining = missing_fields(data)
     if remaining:
-        print('Sau OCR toàn trang vẫn còn trống: ' + ', '.join(remaining), file=sys.stderr)
+        logger.warning('Sau OCR toàn trang vẫn còn trống: ' + ', '.join(remaining))
     return pages, data

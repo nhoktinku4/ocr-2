@@ -5,12 +5,10 @@ Truyền một thư mục thay vì file để chạy cả loạt và ghi report 
 import argparse
 import csv
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import redirect_stdout
 from functools import lru_cache
 import json
 import shutil
 from pathlib import Path
-import sys
 import time
 
 from PIL import Image
@@ -19,6 +17,7 @@ from adaptive_extract import adaptive_extract
 import cv2
 from extract_info import extract_text, load_templates
 from image_io import iter_images
+from logger import logger, request_id_context
 from ocr_image_preparation import enhance_ocr_crop, limit_ocr_pixels
 from page_processing import process_single_image
 from qwen_ocr import QwenOCR, TABLE_OCR_PROMPT
@@ -71,6 +70,21 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
     """
     started = time.perf_counter()
     source = Path(source).expanduser().resolve()
+    # idRequest trong log = tên file đang xử lý.
+    request_token = request_id_context.set(source.name)
+    try:
+        return _run_flow(source, output, template, started, engine_factory=engine_factory,
+                         save_artifacts=save_artifacts, full_page=full_page, raw=raw)
+    except Exception:
+        logger.exception("Xử lý thất bại: %s", source)
+        raise
+    finally:
+        request_id_context.reset(request_token)
+
+
+def _run_flow(source, output, template, started, *, engine_factory, save_artifacts,
+              full_page, raw):
+    logger.info("Bắt đầu xử lý %s (full_page=%s, raw=%s)", source, full_page, raw)
     if not source.is_file() or source.suffix.lower() not in SUPPORTED_SUFFIXES:
         raise ValueError("Đầu vào phải là file PDF hoặc ảnh.")
     templates, kind = load_templates(), None
@@ -86,12 +100,13 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
               DEFAULT_OUTPUT_DIR / source.stem)
     if save_artifacts:
         output.mkdir(parents=True, exist_ok=True)
-        print(f"Kết quả: {output}", file=sys.stderr)
+        logger.info(f"Thư mục kết quả: {output}")
 
     engine_factory = QwenOCR if engine_factory is None else engine_factory
     detector_started = time.perf_counter()
     detector = _shared_detector()
     timings = {"load_detector_seconds": round(time.perf_counter() - detector_started, 3)}
+    request_id = request_id_context.get()
     ocr_engine, cache = None, {}
 
     def read_pages(largest_boxes):
@@ -99,11 +114,10 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
         pages = []
         for page, (name, page_image) in enumerate(iter_images(source), 1):
             page_started = time.perf_counter()
-            with redirect_stdout(sys.stderr):
-                report = process_single_image(page_image, name, output, detector=detector,
-                                              save=save_artifacts, include_crops=not save_artifacts,
-                                              largest_boxes=largest_boxes, padding=50,
-                                              preprocess=not raw)
+            report = process_single_image(page_image, name, output, detector=detector,
+                                          save=save_artifacts, include_crops=not save_artifacts,
+                                          largest_boxes=largest_boxes, padding=50,
+                                          preprocess=not raw)
             detect_seconds = round(time.perf_counter() - page_started, 3)
             # Chỉ đọc các vùng vừa phát hiện trong report, bỏ qua crop cũ trên đĩa.
             regions = []
@@ -121,13 +135,14 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
 
             def read_region(region):
                 block, block_key, folder, prefix, label = region
+                request_id_context.set(request_id)  # ContextVar không tự sang thread của pool
                 crop = output / report["name"] / folder / f"{prefix}_{block['order']:03d}.png"
                 cache_key = (page, block_key, tuple(block["box"]))
                 if cache_key in cache:
                     if save_artifacts:
                         crop.with_suffix(".ocr.txt").write_text(cache[cache_key], encoding="utf-8")
                     return cache[cache_key]
-                print(f"OCR trang {page}, {label} {block['order']}", file=sys.stderr)
+                logger.debug(f"OCR trang {page}, {label} {block['order']} box={block['box']}")
                 prompt = TABLE_OCR_PROMPT if block_key == "table_blocks" else None
                 if save_artifacts:
                     text = _ocr_crop(crop, ocr_engine, prompt=prompt, raw=raw)
@@ -162,10 +177,11 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
             detect_seconds = round(time.perf_counter() - page_started, 3)
             if ocr_engine is None:
                 ocr_engine = engine_factory()
-            print(f"OCR toàn trang {page} (che {len(tables)} bảng)", file=sys.stderr)
+            logger.info(f"OCR toàn trang {page} (che {len(tables)} bảng)")
 
             def read_region(region):
                 image, prompt = region
+                request_id_context.set(request_id)
                 with Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)) as pil:
                     if prompt is None:
                         return ocr_engine.ocr_image(pil, max_new_tokens=OCR_MAX_NEW_TOKENS,
@@ -216,7 +232,7 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
     # Gồm OCR mọi lần đọc lại của adaptive_extract và bước trích xuất.
     timings["ocr_extract_seconds"] = round(time.perf_counter() - extract_started, 3)
     timings["total_seconds"] = round(time.perf_counter() - started, 3)
-    print(f"Thời gian: {timings}", file=sys.stderr)
+    logger.info(f"Thời gian: {timings}")
 
     result = {"source": str(source), "pages": pages, "timings": timings}
     if not any(page["text"].strip() for page in pages):
@@ -226,9 +242,9 @@ def run_flow(source, output=None, template=None, *, engine_factory=None, save_ar
     _write_json(output / "ocr.json", result)
     document_text = "\n\n".join(page["text"] for page in pages) + "\n"
     (output / "ocr.txt").write_text(document_text, encoding="utf-8")
-    print(f"Đã lưu OCR: {output / 'ocr.json'} và {output / 'ocr.txt'}", file=sys.stderr)
+    logger.info(f"Đã lưu OCR: {output / 'ocr.json'} và {output / 'ocr.txt'}")
     _write_json(output / "extracted.json", extracted)
-    print(f"Đã lưu trích xuất: {output / 'extracted.json'}", file=sys.stderr)
+    logger.info(f"Đã lưu trích xuất: {output / 'extracted.json'}")
     return result
 
 
@@ -238,7 +254,7 @@ def run_batch(data_dir, output_dir, template=None, full_page=False, raw=False):
     output_dir.mkdir(parents=True, exist_ok=True)
     files = sorted(p for p in data_dir.rglob("*")
                    if p.is_file() and p.suffix.lower() in SUPPORTED_SUFFIXES)
-    print(f"Tìm thấy {len(files)} file trong {data_dir}", file=sys.stderr)
+    logger.info(f"Tìm thấy {len(files)} file trong {data_dir}")
 
     # Nạp model OCR một lần, dùng chung cho mọi file.
     engine = None
@@ -253,7 +269,7 @@ def run_batch(data_dir, output_dir, template=None, full_page=False, raw=False):
     batch_started = time.perf_counter()
     for index, source in enumerate(files, 1):
         relative = source.relative_to(data_dir)
-        print(f"[{index}/{len(files)}] {relative}", file=sys.stderr)
+        logger.info(f"[{index}/{len(files)}] {relative}")
         started = time.perf_counter()
         doc = {"file": str(relative), "status": "ok", "error": None, "pages": []}
         # Mỗi file một thư mục <tên file> ngay dưới output_dir (không giữ thư mục con của dữ liệu),
@@ -273,7 +289,7 @@ def run_batch(data_dir, output_dir, template=None, full_page=False, raw=False):
             doc["timings"] = result.get("timings", {})
         except Exception as exc:  # noqa: BLE001 - ghi lỗi rồi chạy tiếp file khác
             doc.update(status="error", error=f"{type(exc).__name__}: {exc}")
-            print(f"  Lỗi: {doc['error']}", file=sys.stderr)
+            logger.error(f"[{index}/{len(files)}] {relative} lỗi: {doc['error']}")
         doc["total_seconds"] = round(time.perf_counter() - started, 3)
         documents.append(doc)
         for p in doc["pages"] or [dict.fromkeys(PAGE_TIMING_KEYS)]:
@@ -281,22 +297,20 @@ def run_batch(data_dir, output_dir, template=None, full_page=False, raw=False):
                          "detect_seconds": p["detect_seconds"], "ocr_seconds": p["ocr_seconds"],
                          "file_total_seconds": doc["total_seconds"], "status": doc["status"],
                          "error": doc["error"]})
-        print(f"  {doc['total_seconds']} giây, {len(doc['pages'])} trang", file=sys.stderr)
+        logger.info(f"[{index}/{len(files)}] {relative}: {doc['total_seconds']} giây, {len(doc['pages'])} trang")
         # Ghi report sau mỗi file để không mất dữ liệu nếu bị dừng giữa chừng.
         summary = _write_report(output_dir, rows, documents,
                                 round(time.perf_counter() - batch_started, 3))
 
     if documents:
-        print(f"Tổng kết: {summary['files']} file ({summary['failed_files']} lỗi), "
-              f"{summary['pages']} trang trong {summary['wall_seconds']} giây "
-              f"({summary['pages_per_minute']} trang/phút)", file=sys.stderr)
+        logger.info(f"Tổng kết: {summary['files']} file ({summary['failed_files']} lỗi), "
+                    f"{summary['pages']} trang trong {summary['wall_seconds']} giây "
+                    f"({summary['pages_per_minute']} trang/phút)")
         for prefix, label in (("file", "Mỗi file"), ("page", "Mỗi trang"),
                               ("detect", "  phát hiện"), ("ocr", "  OCR")):
-            print(f"  {label}: TB {summary[f'avg_{prefix}_seconds']} giây, "
-                  f"min {summary[f'min_{prefix}_seconds']}, max {summary[f'max_{prefix}_seconds']}",
-                  file=sys.stderr)
-    print(f"Report: {output_dir / 'timing_report.csv'}, {output_dir / 'timing_report.json'}",
-          file=sys.stderr)
+            logger.info(f"  {label}: TB {summary[f'avg_{prefix}_seconds']} giây, "
+                        f"min {summary[f'min_{prefix}_seconds']}, max {summary[f'max_{prefix}_seconds']}")
+    logger.info(f"Report: {output_dir / 'timing_report.csv'}, {output_dir / 'timing_report.json'}")
     return documents
 
 
@@ -356,7 +370,7 @@ def main():
         run_flow(args.source, args.output_dir, args.template, full_page=args.full_page,
                  raw=args.raw)
     except (OSError, ValueError, RuntimeError, ImportError) as exc:
-        print(f"Lỗi: {exc}", file=sys.stderr)
+        logger.error(f"Lỗi: {exc}")
         return 1
     return 0
 

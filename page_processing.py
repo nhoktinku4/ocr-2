@@ -8,6 +8,7 @@ from pathlib import Path
 import cv2
 
 from box_detection import _text_regions
+from logger import logger
 from ocr_image_preparation import clean_image, prepare_page, resize_large_image
 from table_detection import (LAYOUT_MODEL, PADDING, TABLE_PADDING, detect_table_regions,
                              load_detector)
@@ -101,7 +102,7 @@ def process_single_image(image_bgr, stem_name, output_dir,
                         raise OSError(f"Không thể lưu ảnh: {path}")
     h, w = image_bgr.shape[:2]
     ch, cw = cleaned.shape[:2]
-    print(f"[*] {stem_name}: {w}x{h} → {cw}x{ch}, heron {detected_count} bảng thô"
+    logger.info(f"{stem_name}: {w}x{h} → {cw}x{ch}, heron {detected_count} bảng thô"
           f" → {len(table_blocks)} bảng, {len(blocks)} vùng chữ ngoài bảng."
           + (f" Kết quả: {output}" if save else ""))
     report = _build_report(

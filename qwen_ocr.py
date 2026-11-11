@@ -7,7 +7,7 @@ import base64
 import io
 import os
 import math
-import sys
+from logger import logger
 import httpx
 
 DEFAULT_MAX_PIXELS = 1_605_632
@@ -85,6 +85,6 @@ class QwenOCR:
         if not response.choices or response.choices[0].message.content is None:
             raise RuntimeError("vLLM trả về phản hồi không có nội dung OCR.")
         if response.choices[0].finish_reason == "length":
-            print("Cảnh báo: kết quả có thể bị cắt. Tăng max_new_tokens nếu cần.", file=sys.stderr)
+            logger.warning("Kết quả OCR có thể bị cắt (finish_reason=length). Tăng max_new_tokens nếu cần.")
         return response.choices[0].message.content.strip()
  

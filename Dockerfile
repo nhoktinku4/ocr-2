@@ -5,23 +5,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
-# Model heron không nằm trong git: có sẵn thư mục docling-layout-heron/ cạnh Dockerfile
-# thì copy vào (glob * cho phép thư mục vắng mặt), không thì tải từ Hugging Face
-COPY requirements.txt docling-layout-heron* docling-layout-heron/
-RUN if [ ! -f docling-layout-heron/model.safetensors ]; then \
-    python -c "from huggingface_hub import snapshot_download; \
-snapshot_download('docling-project/docling-layout-heron', local_dir='docling-layout-heron', \
-allow_patterns=['config.json', 'model.safetensors', 'preprocessor_config.json'])"; \
-    fi && rm -f docling-layout-heron/requirements.txt
+# torch từ PyPI trên Linux đã kèm CUDA runtime; chỉ cần driver NVIDIA + nvidia-container-toolkit
+# trên máy chủ. Không có GPU thì table_detection.py tự chạy CPU.
+RUN pip install --no-cache-dir \
+    torch==2.15.0 \
+    transformers==5.22.1 \
+    opencv-python-headless==5.0.0.93 \
+    numpy==2.3.5 \
+    pillow==13.0.0 \
+    pdf2image==1.17.0 \
+    pymupdf==2.1 \
+    httpx==0.28.1 \
+    openai==3.49.0
 
-COPY json/ json/
-COPY *.py ./
+# COPY json/ json/
+# COPY *.py ./
 
 ENV QWEN_OCR_BASE_URL=http://host.docker.internal:8002/v1 \
     PYTHONUNBUFFERED=1
-EXPOSE 8000
-# 1 worker: api.py chỉ xử lý một tài liệu một lúc (FLOW_LOCK)
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# Chạy batch: main.py đọc /data (DEFAULT_DATA_DIR = ../data so với /app), ghi /app/output_flow.
+# Đổi đầu vào/tham số: docker compose run --rm ocr <file hoặc thư mục> [--full-page] [--raw]
+# Batch không mở cổng nên không có /health; kiểm tra server OCR (vLLM) còn trả lời GET /models.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import os, urllib.request; urllib.request.urlopen(os.environ['QWEN_OCR_BASE_URL'].rstrip('/') + '/models', timeout=4)" || exit 1
+ENTRYPOINT ["python", "main.py"]

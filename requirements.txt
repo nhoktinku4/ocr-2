@@ -1,12 +1,9 @@
---extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.15.0
 transformers==5.22.1
 opencv-python-headless==5.0.0.93
 numpy==2.3.5
 pillow==13.0.0
 pdf2image==1.17.0
+pymupdf==2.1
 httpx==0.28.1
-openai
-fastapi
-uvicorn
-python-multipart
+openai==3.49.0

@@ -4,3 +4,4 @@ output_flow/
 docling-layout-heron/
 
 .claude/settings.local.json
+logs/

@@ -1,34 +1,59 @@
-# Chạy API (vLLM chạy sẵn trên máy, cổng 8002):
-#   docker compose up -d --build
+# Đặt file này ở thư mục cha, cạnh source/ (code), qwen/ (model vLLM), docling-layout-heron/, data/ (PDF/ảnh).
+# Chạy batch cả thư mục ./data (vLLM chạy sẵn trên máy, cổng 8002):
+#   docker compose run --rm --build ocr
+# Một file / tham số khác (đường dẫn trong container, /data = DATA_DIR):
+#   docker compose run --rm ocr /data/a.pdf --full-page
 # Chạy kèm vLLM trong compose (cần GPU NVIDIA + nvidia-container-toolkit):
-#   VLLM_MODEL=<model Qwen trên Hugging Face> docker compose --profile vllm up -d --build
-# API: http://<máy>:8000/docs
+#   docker compose --profile vllm up -d vllm
+#   QWEN_OCR_BASE_URL=http://vllm:8002/v1 docker compose run --rm ocr
 services:
-  ocr-api:
+  ocr:
     build: .
     image: ocr-gpkd
-    ports:
-      - "${API_PORT:-8000}:8000"
     environment:
       QWEN_OCR_BASE_URL: ${QWEN_OCR_BASE_URL:-http://host.docker.internal:8002/v1}
       QWEN_OCR_MODEL: ${QWEN_OCR_MODEL:-qwen-ocr}
       QWEN_OCR_API_KEY: ${QWEN_OCR_API_KEY:-EMPTY}
+      # logger.py: log ghi vào source/logs/ocr.log, xoay vòng mỗi ngày.
+      LOG_DIR: /app/logs
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    restart: unless-stopped
+    volumes:
+      # Code mount từ máy 
+      - ${SOURCE_DIR:-./source}:/app
+      # Dữ liệu đầu vào (PDF/ảnh)
+      - ${DATA_DIR:-./data}:/data:ro
+      # Model docling-layout-heron đã tải sẵn 
+      - ${HERON_MODEL_DIR:-./docling-layout-heron}:/app/docling-layout-heron:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   vllm:
     profiles: ["vllm"]
     image: vllm/vllm-openai:latest
     command: >
-      --model ${VLLM_MODEL:-}
+      --model /models/qwen
       --served-model-name ${QWEN_OCR_MODEL:-qwen-ocr}
       --port 8002
     ports:
       - "8002:8002"
     ipc: host
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 600s
+      retries: 3
     volumes:
-      - hf-cache:/root/.cache/huggingface
+      - ${VLLM_MODEL_DIR:-./qwen}:/models/qwen:ro
+    environment:
+      HF_HUB_OFFLINE: "1"
     deploy:
       resources:
         reservations:
@@ -37,6 +62,3 @@ services:
               count: all
               capabilities: [gpu]
     restart: unless-stopped
-
-volumes:
-  hf-cache:
