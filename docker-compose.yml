@@ -1,17 +1,17 @@
-# Đặt file này ở thư mục cha, cạnh source/ (code), qwen/ (model vLLM), docling-layout-heron/.
+# Đặt file này ở thư mục cha, cạnh source/ (code), qwen-4b/ (model vLLM), docling-layout-heron/.
 # File PDF/ảnh đặt trong source/ (container thấy source/ là /app, chạy từ /app).
-# Chạy 1 file hoặc cả thư mục (vLLM chạy sẵn trên máy, cổng 8002):
+# Chạy 1 file hoặc cả thư mục (vLLM chạy sẵn trên máy, cổng 8007):
 #   docker compose run --rm --build ocr input/a.pdf
 #   docker compose run --rm ocr input
 # Chạy kèm vLLM trong compose (cần GPU NVIDIA + nvidia-container-toolkit):
 #   docker compose --profile vllm up -d vllm
-#   QWEN_OCR_BASE_URL=http://vllm:8002/v1 docker compose run --rm ocr
+#   QWEN_OCR_BASE_URL=http://vllm:8007/v1 docker compose run --rm ocr
 services:
   ocr:
     build: .
     image: ocr-gpkd
     environment:
-      QWEN_OCR_BASE_URL: ${QWEN_OCR_BASE_URL:-http://host.docker.internal:8002/v1}
+      QWEN_OCR_BASE_URL: ${QWEN_OCR_BASE_URL:-http://host.docker.internal:8007/v1}
       QWEN_OCR_MODEL: ${QWEN_OCR_MODEL:-qwen-ocr}
       QWEN_OCR_API_KEY: ${QWEN_OCR_API_KEY:-EMPTY}
       # logger.py: log ghi vào source/logs/ocr.log, xoay vòng mỗi ngày.
@@ -38,18 +38,21 @@ services:
     command: >
       --model /models/qwen
       --served-model-name ${QWEN_OCR_MODEL:-qwen-ocr}
-      --port 8002
+      --port 8007
+      --quantization bitsandbytes
+    # --quantization bitsandbytes: lượng tử hóa 4-bit lúc nạp từ model gốc (bf16/fp16),
+    # không cần checkpoint đã quantize sẵn. Model đã là AWQ/GPTQ thì bỏ dòng này.
     ports:
-      - "8002:8002"
+      - "8007:8007"
     ipc: host
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=4)"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8007/health', timeout=4)"]
       interval: 30s
       timeout: 5s
       start_period: 600s
       retries: 3
     volumes:
-      - ${VLLM_MODEL_DIR:-./qwen}:/models/qwen:ro
+      - ${VLLM_MODEL_DIR:-./qwen-4b}:/models/qwen:ro
     environment:
       HF_HUB_OFFLINE: "1"
     deploy:

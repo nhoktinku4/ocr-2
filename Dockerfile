@@ -22,7 +22,7 @@ RUN pip install --no-cache-dir \
 # COPY json/ json/
 # COPY *.py ./
 
-ENV QWEN_OCR_BASE_URL=http://host.docker.internal:8002/v1 \
+ENV QWEN_OCR_BASE_URL=http://host.docker.internal:8007/v1 \
     PYTHONUNBUFFERED=1
 # Chạy: docker compose run --rm ocr <file hoặc thư mục trong source/>; kết quả trích xuất ghi vào log (/app/logs).
 # Batch không mở cổng nên không có /health; kiểm tra server OCR (vLLM) còn trả lời GET /models.
