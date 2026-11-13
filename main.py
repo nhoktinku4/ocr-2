@@ -26,7 +26,7 @@ DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 SUPPORTED_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 OCR_OPTIONS = {"max_new_tokens": 2048, "max_time": 120.0}
 # Số vùng gửi OCR cùng lúc; vLLM tự gom các request đồng thời thành batch.
-OCR_WORKERS = 10
+OCR_WORKERS = 5  # nên bằng --max-num-seqs của vLLM
 
 
 @lru_cache(maxsize=1)

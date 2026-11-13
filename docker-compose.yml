@@ -6,6 +6,7 @@
 # Chạy kèm vLLM trong compose (cần GPU NVIDIA + nvidia-container-toolkit):
 #   docker compose --profile vllm up -d vllm
 #   QWEN_OCR_BASE_URL=http://vllm:8007/v1 docker compose run --rm ocr
+# Chạy API (cổng 8002): docker compose up -d --build api
 services:
   ocr:
     build: .
@@ -32,6 +33,20 @@ services:
               count: all
               capabilities: [gpu]
 
+  # API HTTP (api.py): docker compose up -d --build api → POST http://localhost:8002/ocr
+  api:
+    extends: ocr
+    entrypoint: ["python", "run_api.py"]
+    ports:
+      - "${API_PORT:-8002}:8002"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped
+
   vllm:
     profiles: ["vllm"]
     container_name: vllm-qwen-ocr
@@ -43,7 +58,7 @@ services:
       --quantization bitsandbytes
       --gpu-memory-utilization 0.14
       --max-model-len 5120
-      --max-num-seqs 1
+      --max-num-seqs 5
       --compilation-config '{"cudagraph_mode": "PIECEWISE"}'
  
     ports:

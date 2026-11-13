@@ -49,7 +49,7 @@ def create_logger(logfile="ocr.log"):
         raise ValueError("LOG_BACKUP_COUNT must be at least 1")
 
     log_dir = Path(os.environ.get(
-        "LOG_DIR", str(Path(__file__).resolve().parent.parent / "/logs")
+        "LOG_DIR", str(Path(__file__).resolve().parent / "logs")
     ))
     log_path = log_dir / logfile
     log_path.parent.mkdir(parents=True, exist_ok=True)

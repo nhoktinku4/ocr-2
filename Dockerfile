@@ -9,6 +9,7 @@ WORKDIR /app
 # torch từ PyPI trên Linux đã kèm CUDA runtime; chỉ cần driver NVIDIA + nvidia-container-toolkit
 # trên máy chủ. Không có GPU thì table_detection.py tự chạy CPU.
 RUN pip install --no-cache-dir \
+    --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org \
     torch==2.15.0 \
     transformers==5.22.1 \
     opencv-python-headless==5.0.0.93 \
@@ -17,7 +18,10 @@ RUN pip install --no-cache-dir \
     pdf2image==1.17.0 \
     pymupdf==2.1 \
     httpx==0.28.1 \
-    openai==3.49.0
+    openai==3.49.0 \
+    fastapi==0.115.12 \
+    uvicorn==0.34.0 \
+    python-multipart==0.0.20
 
 # COPY json/ json/
 # COPY *.py ./
