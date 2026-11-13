@@ -36,6 +36,7 @@ services:
   # API HTTP (api.py): docker compose up -d --build api → POST http://localhost:8002/ocr
   api:
     extends: ocr
+    container_name: ocr-gpkd
     entrypoint: ["python", "run_api.py"]
     ports:
       - "${API_PORT:-8002}:8002"
