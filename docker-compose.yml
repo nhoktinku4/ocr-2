@@ -34,13 +34,18 @@ services:
 
   vllm:
     profiles: ["vllm"]
+    container_name: vllm-qwen-ocr
     image: vllm/vllm-openai:latest
     command: >
       --model /models/qwen
       --served-model-name ${QWEN_OCR_MODEL:-qwen-ocr}
       --port 8007
       --quantization bitsandbytes
-      --gpu-memory-utilization 0.2
+      --gpu-memory-utilization 0.14
+      --max-model-len 5120
+      --max-num-seqs 1
+      --compilation-config '{"cudagraph_mode": "PIECEWISE"}'
+ 
     ports:
       - "8007:8007"
     ipc: host

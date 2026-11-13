@@ -89,8 +89,11 @@ def run_flow(source, engine=None, templates=None):
     request_token = request_id_context.set(source.name)  # idRequest trong log = tên file
     started = time.perf_counter()
     try:
-        if not source.is_file() or source.suffix.lower() not in SUPPORTED_SUFFIXES:
-            raise ValueError("Đầu vào phải là file PDF hoặc ảnh.")
+        if not source.is_file():
+            # Trong Docker: chỉ thấy file nằm trong thư mục đã mount (source/ = /app).
+            raise FileNotFoundError(f"Không tìm thấy file: {source}")
+        if source.suffix.lower() not in SUPPORTED_SUFFIXES:
+            raise ValueError(f"Đầu vào phải là file PDF hoặc ảnh: {source}")
         logger.info(f"Bắt đầu xử lý {source}")
         engine = engine or QwenOCR()
         templates = templates or load_templates()

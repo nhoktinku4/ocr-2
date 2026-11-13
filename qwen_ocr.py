@@ -20,6 +20,8 @@ OCR_PROMPT = (
 TABLE_OCR_PROMPT = (
     "Transcribe this table image into a Markdown table, preserving exact rows and columns.\n"
     "Keep Vietnamese text, numbers, and symbols exact. Leave empty cells blank and do not duplicate merged cells.\n"
+    "Text that wraps onto several lines inside one cell belongs to that same cell.\n"
+    "Stop after the last row that contains text; do not output empty rows.\n"
     "Output ONLY the Markdown table, no explanations."
 )
 
