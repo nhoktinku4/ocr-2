@@ -20,4 +20,4 @@ fi
 if [ -d "$target" ]; then mount_dir=$target; else mount_dir=$(dirname -- "$target"); fi
 
 cd "$(dirname -- "$(realpath -- "$0")")"
-exec docker compose run --rm -v "$mount_dir:$mount_dir:ro" ocr "$target"
+exec docker compose run --rm --no-deps -v "$mount_dir:$mount_dir:ro" --entrypoint python api main.py "$target"

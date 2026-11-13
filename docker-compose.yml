@@ -1,16 +1,19 @@
 # Đặt file này ở thư mục cha, cạnh source/ (code), qwen-4b/ (model vLLM), docling-layout-heron/.
-# File PDF/ảnh đặt trong source/ (container thấy source/ là /app, chạy từ /app).
-# Chạy 1 file hoặc cả thư mục (vLLM chạy sẵn trên máy, cổng 8007):
-#   docker compose run --rm --build ocr input/a.pdf
-#   docker compose run --rm ocr input
+# Chạy ngay trong thư mục code thì đặt SOURCE_DIR=. trong .env.
+# API (cổng 8002):
+#   docker compose up -d --build api      → POST http://localhost:8002/ocr
+#   docker compose logs -f api
+# Chạy batch 1 file hoặc cả thư mục (không qua API; file nằm trong source/):
+#   docker compose run --rm --entrypoint python api main.py input/a.pdf
+#   ./run_ocr.sh /duong/dan/file_hoac_thu_muc     (file ở bất kỳ đâu trên máy)
 # Chạy kèm vLLM trong compose (cần GPU NVIDIA + nvidia-container-toolkit):
-#   docker compose --profile vllm up -d vllm
-#   QWEN_OCR_BASE_URL=http://vllm:8007/v1 docker compose run --rm ocr
-# Chạy API (cổng 8002): docker compose up -d --build api
+#   docker compose --profile vllm up -d vllm  (rồi đặt QWEN_OCR_BASE_URL=http://vllm:8007/v1)
 services:
-  ocr:
+  # API HTTP (api.py)
+  api:
     build: .
     image: ocr-gpkd
+    container_name: ocr-gpkd
     environment:
       QWEN_OCR_BASE_URL: ${QWEN_OCR_BASE_URL:-http://host.docker.internal:8007/v1}
       QWEN_OCR_MODEL: ${QWEN_OCR_MODEL:-qwen-ocr}
@@ -32,11 +35,6 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-
-  # API HTTP (api.py): docker compose up -d --build api → POST http://localhost:8002/ocr
-  api:
-    extends: ocr
-    container_name: ocr-gpkd
     entrypoint: ["python", "run_api.py"]
     ports:
       - "${API_PORT:-8002}:8002"
@@ -61,7 +59,6 @@ services:
       --max-model-len 5120
       --max-num-seqs 5
       --compilation-config '{"cudagraph_mode": "PIECEWISE"}'
- 
     ports:
       - "8007:8007"
     ipc: host
