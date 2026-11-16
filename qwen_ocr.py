@@ -71,6 +71,9 @@ def build_ocr_prompt() -> str:
         "- The section \"Thông tin về chủ sở hữu\" (owner of a single-member LLC / private enterprise) "
         "goes into thanh_vien (one object per owner), same as \"Danh sách thành viên góp vốn\" / "
         "\"Danh sách cổ đông sáng lập\".\n"
+        "- nguoi_dai_dien: ONLY the person(s) in the section \"Người đại diện theo pháp luật\" "
+        "(one object per representative); do not copy owners or members into it unless they are also "
+        "listed in that section.\n"
         "- Preserve Vietnamese diacritics and numbers exactly as written.\n"
         "- Return only the JSON, without markdown or explanations."
     )
