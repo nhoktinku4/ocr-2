@@ -68,6 +68,9 @@ def build_ocr_prompt() -> str:
         "- Keep exactly the template keys and structure; include every key, do not add or rename keys.\n"
         "- Use null for fields not present in the images; never guess or copy a value into another field.\n"
         "- Lists: one object per member / legal representative (members are often in a table).\n"
+        "- The section \"Thông tin về chủ sở hữu\" (owner of a single-member LLC / private enterprise) "
+        "goes into thanh_vien (one object per owner), same as \"Danh sách thành viên góp vốn\" / "
+        "\"Danh sách cổ đông sáng lập\".\n"
         "- Preserve Vietnamese diacritics and numbers exactly as written.\n"
         "- Return only the JSON, without markdown or explanations."
     )
