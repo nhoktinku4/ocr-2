@@ -161,9 +161,26 @@ def _drop_signers(result):
     return result
 
 
+_PROVINCE_RE = re.compile(r"\s+(t[iỉ]nh|th[aà]nh\s+ph[oố]|tp\.?)\s+(.+)$", re.IGNORECASE)
+
+
+def _split_province(result):
+    """co_quan_cap.so dính tên tỉnh ("SỞ KẾ HOẠCH VÀ ĐẦU TƯ TỈNH BÌNH PHƯỚC") → tách sang tinh_thanh."""
+    agency = result.get("co_quan_cap")
+    if not isinstance(agency, dict) or _empty(agency.get("so")):
+        return result
+    match = _PROVINCE_RE.search(str(agency["so"]).strip())
+    if match:
+        agency = {**agency, "so": agency["so"].strip()[:match.start()].strip()}
+        if _empty(agency.get("tinh_thanh")):
+            agency["tinh_thanh"] = match.group(2).strip()
+        result["co_quan_cap"] = agency
+    return result
+
+
 def _merge_pages(results, templates):
     """Gộp JSON của các trang thành một kết quả theo mẫu của loại xuất hiện nhiều nhất."""
-    results = [_drop_signers(_main_business_line(dict(r))) for r in results]
+    results = [_split_province(_drop_signers(_main_business_line(dict(r)))) for r in results]
     kinds = [_kind_of(r, templates) for r in results]
     kind = max(set(kinds), key=kinds.count)
     merged = _merge_value(templates[kind], [r for r, k in zip(results, kinds) if k == kind])
