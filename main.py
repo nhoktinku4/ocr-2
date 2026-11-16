@@ -1,8 +1,9 @@
 """PDF/ảnh GPKD (doanh nghiệp / hộ kinh doanh) → Qwen-VL đọc cả trang, tự nhận loại → JSON theo json/*.json.
 
 Mọi trang của một giấy được gửi trong một request để model trả về một JSON; nếu request đó lỗi
-(context/KV cache vLLM không đủ) thì OCR từng trang rồi gộp. Kết quả trích xuất ghi vào log, không lưu
-file. Truyền một thư mục để chạy cả loạt; truyền nhiều ảnh để gộp chúng thành một giấy.
+(context/KV cache vLLM không đủ) thì OCR từng trang rồi gộp. Kết quả lưu vào <output>/<tên file>/:
+extract.json, response.txt (câu trả lời thô của model). Truyền một thư mục để chạy cả loạt;
+truyền nhiều ảnh để gộp chúng thành một giấy.
 """
 
 import argparse
@@ -22,6 +23,7 @@ from qwen_ocr import JSON_DIR, OCR_PROMPT, TYPE_DESCRIPTIONS, QwenOCR
 
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "output_flow"
 SUPPORTED_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 OCR_OPTIONS = {"max_new_tokens": 3000, "max_time": 300.0}
 # Số trang OCR song song khi phải chạy từng trang; nên bằng --max-num-seqs của vLLM.
@@ -155,8 +157,9 @@ def extract(images, engine, templates):
     return _ocr_pages_separately(engine, images, templates)
 
 
-def run_flow(source, engine=None, templates=None):
-    """OCR một giấy (một file, hoặc danh sách file ảnh là các trang theo thứ tự); ghi log và trả về dict."""
+def run_flow(source, output=None, engine=None, templates=None):
+    """OCR một giấy (một file, hoặc danh sách file ảnh là các trang theo thứ tự); lưu vào output
+    (mặc định output_flow/<tên file đầu tiên>) và trả về dict."""
     sources = [Path(p).expanduser().resolve() for p in (source if isinstance(source, (list, tuple)) else [source])]
     request_token = request_id_context.set(sources[0].name)  # idRequest trong log = tên file
     started = time.perf_counter()
@@ -167,11 +170,16 @@ def run_flow(source, engine=None, templates=None):
                 raise FileNotFoundError(f"Không tìm thấy file: {path}")
             if path.suffix.lower() not in SUPPORTED_SUFFIXES:
                 raise ValueError(f"Đầu vào phải là file PDF hoặc ảnh: {path}")
-        logger.info(f"Bắt đầu xử lý {', '.join(map(str, sources))}")
+        output = Path(output) if output else DEFAULT_OUTPUT_DIR / sources[0].stem
+        output.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Bắt đầu xử lý {', '.join(map(str, sources))} → {output}")
         images = [_to_pil(image) for path in sources for _, image in iter_images(path)]
         if not images:
             raise ValueError("Đầu vào không có ảnh/trang để xử lý.")
         text, extracted = extract(images, engine or QwenOCR(), templates or load_templates())
+        (output / "response.txt").write_text(text + "\n", encoding="utf-8")
+        (output / "extract.json").write_text(json.dumps(extracted, ensure_ascii=False, indent=2),
+                                             encoding="utf-8")
         logger.info(f"Xong {len(images)} trang trong {time.perf_counter() - started:.3f} giây")
         logger.info("Kết quả trích xuất: %s", json.dumps(extracted, ensure_ascii=False))
         return {"source": ", ".join(map(str, sources)), "pages": len(images), "text": text,
@@ -183,18 +191,22 @@ def run_flow(source, engine=None, templates=None):
         request_id_context.reset(request_token)
 
 
-def run_batch(data_dir):
+def run_batch(data_dir, output_dir=DEFAULT_OUTPUT_DIR):
     """Chạy mọi file PDF/ảnh trong thư mục (kể cả thư mục con); trả về số file lỗi."""
     data_dir = Path(data_dir).expanduser().resolve()
     files = sorted(p for p in data_dir.rglob("*")
                    if p.is_file() and p.suffix.lower() in SUPPORTED_SUFFIXES)
     logger.info(f"Tìm thấy {len(files)} file trong {data_dir}")
     engine, templates = QwenOCR(), load_templates()
-    failed, pages, started = 0, 0, time.perf_counter()
+    failed, pages, started, used = 0, 0, time.perf_counter(), set()
     for index, source in enumerate(files, 1):
         logger.info(f"[{index}/{len(files)}] {source.relative_to(data_dir)}")
+        name, n = source.stem, 2                # trùng tên file ở thư mục con khác: thêm _2, _3...
+        while name in used:
+            name, n = f"{source.stem}_{n}", n + 1
+        used.add(name)
         try:
-            pages += run_flow(source, engine, templates)["pages"]
+            pages += run_flow(source, Path(output_dir) / name, engine, templates)["pages"]
         except Exception:  # noqa: BLE001 - đã ghi log trong run_flow, chạy tiếp file khác
             failed += 1
     logger.info(f"Tổng kết: {len(files)} file ({failed} lỗi), {pages} trang trong "
@@ -207,13 +219,16 @@ def main():
     parser.add_argument("source", type=Path, nargs="*", default=[DEFAULT_DATA_DIR],
                         help="File PDF/ảnh, thư mục để chạy batch (mặc định: ../data), "
                              "hoặc nhiều ảnh là các trang của cùng một giấy")
-    sources = parser.parse_args().source
+    parser.add_argument("-o", "--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR,
+                        help="Thư mục kết quả, mỗi giấy một thư mục con (mặc định: output_flow)")
+    args = parser.parse_args()
+    sources, output_dir = args.source, args.output_dir.expanduser().resolve()
     if len(sources) == 1 and sources[0].is_dir():
-        return 1 if run_batch(sources[0]) else 0
+        return 1 if run_batch(sources[0], output_dir) else 0
     if any(p.is_dir() for p in sources):
         parser.error("Khi truyền nhiều đầu vào, tất cả phải là file.")
     try:
-        run_flow(sources if len(sources) > 1 else sources[0])
+        run_flow(sources if len(sources) > 1 else sources[0], output_dir / sources[0].stem)
     except Exception:  # noqa: BLE001 - lỗi đã ghi log trong run_flow
         return 1
     return 0

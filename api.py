@@ -45,7 +45,7 @@ def ocr(file: UploadFile = File(...),
             shutil.copyfileobj(file.file, f)
         logger.info(f"API nhận file {file.filename} ({source.stat().st_size} byte)")
         try:
-            result = run_flow(source, engine, templates)
+            result = run_flow(source, Path(tmp) / "out", engine, templates)
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
         except Exception as e:  # noqa: BLE001 - đã ghi log trong run_flow
