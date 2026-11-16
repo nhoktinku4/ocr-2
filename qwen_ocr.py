@@ -61,7 +61,7 @@ def build_ocr_prompt() -> str:
         "- nganh_nghe_chinh: ten = business line name, ma_nganh = its code.\n"
         "- Persons (chu_so_huu, nguoi_dai_dien, chu_ho): ho_ten = full name only (no \"Ông\", \"Bà\"); "
         "gioi_tinh; ngay_sinh; dan_toc; quoc_tich; loai_giay_to = ID document type (CCCD, CMND, Hộ chiếu); "
-        "so_giay_to = ID number only; ngay_cap, noi_cap; dia_chi_thuong_tru and dia_chi_lien_lac = addresses only; "
+        "so_giay_to_(CMND/CCCD) = ID number only; ngay_cap, noi_cap; dia_chi_thuong_tru and dia_chi_lien_lac = addresses only; "
         "chuc_danh = position (e.g. \"Giám đốc\"); phan_von_gop, ty_le = capital contribution and percentage.\n"
         "Rules:\n"
         "- Output a single JSON object following the identified template.\n"
