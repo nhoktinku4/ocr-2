@@ -74,6 +74,9 @@ def build_ocr_prompt() -> str:
         "- nguoi_dai_dien: ONLY the person(s) in the section \"Người đại diện theo pháp luật\" "
         "(one object per representative); do not copy owners or members into it unless they are also "
         "listed in that section.\n"
+        "- IGNORE the signature block at the end of the certificate (\"TRƯỞNG PHÒNG\", \"PHÓ TRƯỞNG PHÒNG\", "
+        "\"KT. TRƯỞNG PHÒNG\", \"TM. ỦY BAN NHÂN DÂN\", stamp/seal, signer's name): the signer is an official, "
+        "never put that name in chu_so_huu, nguoi_dai_dien or chu_ho.\n"
         "- Preserve Vietnamese diacritics and numbers exactly as written.\n"
         "- Return only the JSON, without markdown or explanations."
     )
