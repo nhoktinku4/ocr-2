@@ -19,7 +19,9 @@ from PIL import Image
 
 from image_io import iter_images
 from logger import logger, request_id_context
-from qwen_ocr import JSON_DIR, OCR_PROMPT, TYPE_DESCRIPTIONS, QwenOCR
+import re
+
+from qwen_ocr import BUSINESS_LINES_KEY, JSON_DIR, OCR_PROMPT, TYPE_DESCRIPTIONS, QwenOCR
 
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -101,8 +103,35 @@ def _kind_of(result, templates):
     return max(templates, key=lambda kind: len(set(result) & set(templates[kind])))
 
 
+def _main_business_line(result):
+    """danh_sach_nganh_nghe → nganh_nghe_chinh: dòng có chữ "chính" ở mã ngành; không có thì lấy hết."""
+    rows = result.pop(BUSINESS_LINES_KEY, None)
+    if not isinstance(rows, list):
+        return result
+    rows = [r for r in rows if isinstance(r, dict) and not (_empty(r.get("ten")) and _empty(r.get("ma_nganh")))]
+    if not rows:
+        return result
+    main = [r for r in rows if "chinh" in _plain(r.get("ma_nganh") or "")]
+    # Model đôi khi để chữ "(chính)" sang cột tên ngành.
+    main = main or [r for r in rows if re.search(r"\(\s*chinh\s*\)", _plain(r.get("ten") or ""))]
+    chosen = main[:1] or rows
+
+    def clean(value, code):
+        value = str(value or "").strip()
+        if code:
+            return re.sub(r"\D+", "", value) or value
+        return re.sub(r"\s*\(\s*ch[ií]nh\s*\)\s*$", "", value, flags=re.I).strip()
+
+    names = [clean(r.get("ten"), False) for r in chosen]
+    codes = [clean(r.get("ma_nganh"), True) for r in chosen]
+    result["nganh_nghe_chinh"] = {"ten": "; ".join(n for n in names if n) or None,
+                                  "ma_nganh": "; ".join(c for c in codes if c) or None}
+    return result
+
+
 def _merge_pages(results, templates):
     """Gộp JSON của các trang thành một kết quả theo mẫu của loại xuất hiện nhiều nhất."""
+    results = [_main_business_line(dict(r)) for r in results]
     kinds = [_kind_of(r, templates) for r in results]
     kind = max(set(kinds), key=kinds.count)
     merged = _merge_value(templates[kind], [r for r, k in zip(results, kinds) if k == kind])

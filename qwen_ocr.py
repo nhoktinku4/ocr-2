@@ -25,12 +25,22 @@ TYPE_DESCRIPTIONS = {
 }
 
 
+# Model chép lại cả bảng ngành nghề vào khóa này (giữ nguyên chữ "(chính)" ở mã ngành);
+# main.py chọn ngành chính rồi điền nganh_nghe_chinh. Chọn trong code chắc hơn để model 4B tự chọn.
+BUSINESS_LINES_KEY = "danh_sach_nganh_nghe"
+
+
 def _load_templates() -> dict[str, str]:
     """Đọc json/<loại>.json thành chuỗi JSON gọn để nhúng vào prompt."""
     templates = {}
     for kind in TYPE_DESCRIPTIONS:
         with open(os.path.join(JSON_DIR, f"{kind}.json"), encoding="utf-8") as f:
-            templates[kind] = json.dumps(json.load(f), ensure_ascii=False)
+            template = json.load(f)
+        if "nganh_nghe_chinh" in template:
+            template = {(BUSINESS_LINES_KEY if k == "nganh_nghe_chinh" else k):
+                        ([{"ten": None, "ma_nganh": None}] if k == "nganh_nghe_chinh" else v)
+                        for k, v in template.items()}
+        templates[kind] = json.dumps(template, ensure_ascii=False)
     return templates
 
 
@@ -58,11 +68,10 @@ def build_ocr_prompt() -> str:
         "foreign language, abbreviation.\n"
         "- dia_chi: address only; dien_thoai, fax, email, website: each in its own field.\n"
         "- von_dieu_le / von_kinh_doanh: capital as written in digits (e.g. \"1.000.000.000 đồng\").\n"
-        "- nganh_nghe_chinh: ten = business line name, ma_nganh = its code (digits only, e.g. \"4632\").\n"
-        "  If the business lines are a table with several rows: take ONLY ONE row, the one whose Mã ngành "
-        "column contains the word \"chính\" (e.g. \"4632(chính)\", \"4632 (Chính)\"). "
-        "If no row has \"chính\", take ALL rows: ten = all names joined by \"; \", "
-        "ma_nganh = all codes joined by \"; \" in the same order (e.g. \"4632; 4711\").\n"
+        f"- {BUSINESS_LINES_KEY}: copy EVERY row of the business lines table (\"Ngành, nghề kinh doanh\"), "
+        "in order, one object per row: ten = the name in column \"Tên ngành\", ma_nganh = the text in column "
+        "\"Mã ngành\" EXACTLY as written, KEEPING any word \"chính\" (e.g. \"4632\", \"4711 (Chính)\", "
+        "\"4632(chính)\"). Do not choose or skip rows.\n"
         "- Persons (chu_so_huu, nguoi_dai_dien, chu_ho): ho_ten = full name only (no \"Ông\", \"Bà\"); "
         "gioi_tinh; ngay_sinh; dan_toc; quoc_tich; loai_giay_to = ID document type (CCCD, CMND, Hộ chiếu); "
         "so_giay_to_(CMND/CCCD) = ID number only; ngay_cap, noi_cap; dia_chi_thuong_tru and dia_chi_lien_lac = addresses only; "
