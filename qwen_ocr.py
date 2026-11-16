@@ -61,6 +61,8 @@ def build_ocr_prompt() -> str:
         "- loai_giay_to: keep exactly the value given in the template.\n"
         "- co_quan_cap: issuing authority (\"Sở Tài chính / Sở Kế hoạch và Đầu tư <tỉnh>\", "
         "\"Phòng Đăng ký kinh doanh\", \"UBND quận/huyện ...\", \"Phòng Tài chính - Kế hoạch\").\n"
+        "  co_quan_cap.so means \"Sở\" (the department, e.g. \"Sở Tài chính\", \"Sở Kế hoạch và Đầu tư\"), "
+        "NOT \"số\" (a number); phong = the office (\"Phòng Đăng ký kinh doanh\"); tinh_thanh = province/city.\n"
         "- ma_so_doanh_nghiep / ma_so_ho_kinh_doanh / so_dang_ky: only the code digits.\n"
         "- dang_ky_lan_dau: date of first registration; dang_ky_thay_doi: lan_thu = change number, "
         "ngay = date of that change. Dates as written, preferably dd/mm/yyyy.\n"
