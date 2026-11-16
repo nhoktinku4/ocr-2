@@ -21,7 +21,7 @@ from image_io import iter_images
 from logger import logger, request_id_context
 import re
 
-from qwen_ocr import BUSINESS_LINES_KEY, JSON_DIR, OCR_PROMPT, TYPE_DESCRIPTIONS, QwenOCR
+from qwen_ocr import BUSINESS_LINES_KEY, JSON_DIR, SIGNER_KEY, OCR_PROMPT, TYPE_DESCRIPTIONS, QwenOCR
 
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -129,9 +129,41 @@ def _main_business_line(result):
     return result
 
 
+PERSON_LIST_KEYS = ("chu_so_huu", "nguoi_dai_dien")
+
+
+def _name_key(name):
+    return " ".join(_plain(name or "").split())
+
+
+def _drop_signers(result):
+    """Bỏ khỏi danh sách người: người ký (theo nguoi_ky) và người chỉ có tên, không có chi tiết nào khác
+    (tên đứng riêng ở khối chữ ký, không phải chủ sở hữu / người đại diện)."""
+    signer = _name_key(result.pop(SIGNER_KEY, None))
+    for key in PERSON_LIST_KEYS:
+        people = result.get(key)
+        if not isinstance(people, list):
+            continue
+        kept = []
+        for person in people:
+            if not isinstance(person, dict):
+                continue
+            name = _name_key(person.get("ho_ten"))
+            details = [v for k, v in person.items() if k not in ("ho_ten", "chuc_danh") and not _empty(v)]
+            if (signer and name == signer) or (name and not details):
+                logger.info(f"Bỏ {person.get('ho_ten')!r} khỏi {key} (người ký / không có thông tin khác)")
+                continue
+            kept.append(person)
+        result[key] = kept
+    if signer and isinstance(result.get("chu_ho"), dict) and _name_key(result["chu_ho"].get("ho_ten")) == signer:
+        logger.info(f"chu_ho trùng tên người ký {result['chu_ho'].get('ho_ten')!r}; bỏ tên")
+        result["chu_ho"] = {**result["chu_ho"], "ho_ten": None}
+    return result
+
+
 def _merge_pages(results, templates):
     """Gộp JSON của các trang thành một kết quả theo mẫu của loại xuất hiện nhiều nhất."""
-    results = [_main_business_line(dict(r)) for r in results]
+    results = [_drop_signers(_main_business_line(dict(r))) for r in results]
     kinds = [_kind_of(r, templates) for r in results]
     kind = max(set(kinds), key=kinds.count)
     merged = _merge_value(templates[kind], [r for r, k in zip(results, kinds) if k == kind])

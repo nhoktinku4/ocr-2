@@ -28,6 +28,9 @@ TYPE_DESCRIPTIONS = {
 # Model chép lại cả bảng ngành nghề vào khóa này (giữ nguyên chữ "(chính)" ở mã ngành);
 # main.py chọn ngành chính rồi điền nganh_nghe_chinh. Chọn trong code chắc hơn để model 4B tự chọn.
 BUSINESS_LINES_KEY = "danh_sach_nganh_nghe"
+# Model ghi tên người ký (cán bộ cấp giấy) vào khóa này thay vì nhét nhầm vào mục người;
+# main.py dùng nó để lọc rồi bỏ khỏi kết quả.
+SIGNER_KEY = "nguoi_ky"
 
 
 def _load_templates() -> dict[str, str]:
@@ -40,6 +43,7 @@ def _load_templates() -> dict[str, str]:
             template = {(BUSINESS_LINES_KEY if k == "nganh_nghe_chinh" else k):
                         ([{"ten": None, "ma_nganh": None}] if k == "nganh_nghe_chinh" else v)
                         for k, v in template.items()}
+        template[SIGNER_KEY] = None
         templates[kind] = json.dumps(template, ensure_ascii=False)
     return templates
 
@@ -92,9 +96,13 @@ def build_ocr_prompt() -> str:
         "- nguoi_dai_dien: ONLY the person(s) in the section \"Người đại diện theo pháp luật\" "
         "(one object per representative); do not copy owners or members into it unless they are also "
         "listed in that section.\n"
-        "- IGNORE the signature block at the end of the certificate (\"TRƯỞNG PHÒNG\", \"PHÓ TRƯỞNG PHÒNG\", "
-        "\"KT. TRƯỞNG PHÒNG\", \"TM. ỦY BAN NHÂN DÂN\", stamp/seal, signer's name): the signer is an official, "
-        "never put that name in chu_so_huu, nguoi_dai_dien or chu_ho.\n"
+        f"- {SIGNER_KEY}: the name in the signature block at the end of the certificate (under \"TRƯỞNG PHÒNG\", "
+        "\"PHÓ TRƯỞNG PHÒNG\", \"KT. TRƯỞNG PHÒNG\", \"TM. ỦY BAN NHÂN DÂN\", next to the stamp/seal). "
+        "The signer is the issuing official: put that name ONLY in "
+        f"{SIGNER_KEY}, NEVER in chu_so_huu, nguoi_dai_dien or chu_ho.\n"
+        "- nguoi_dai_dien comes from the section \"Người đại diện theo pháp luật\" in the body, which lists "
+        "chức danh, ngày sinh, giấy tờ, địa chỉ. A name that stands alone with no such details is NOT a "
+        "representative.\n"
         "- Preserve Vietnamese diacritics and numbers exactly as written.\n"
         "- Return only the JSON, without markdown or explanations."
     )
