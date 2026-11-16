@@ -1,120 +1,183 @@
-"""PDF/ảnh → phát hiện vùng chữ và bảng → OCR → trích xuất theo mẫu JSON.
+"""PDF/ảnh GPKD (doanh nghiệp / hộ kinh doanh) → Qwen-VL đọc cả trang, tự nhận loại → JSON theo json/*.json.
 
-Kết quả trích xuất ghi vào log, không lưu file. Truyền một thư mục để chạy cả loạt."""
+Mọi trang của một giấy được gửi trong một request để model trả về một JSON; nếu request đó lỗi
+(context/KV cache vLLM không đủ) thì OCR từng trang rồi gộp. Kết quả trích xuất ghi vào log, không lưu
+file. Truyền một thư mục để chạy cả loạt; truyền nhiều ảnh để gộp chúng thành một giấy.
+"""
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
-from functools import lru_cache
 import json
+import os
 from pathlib import Path
 import time
+import unicodedata
 
 import cv2
 from PIL import Image
 
-from adaptive_extract import adaptive_extract
-from extract_info import extract_text, load_templates
 from image_io import iter_images
 from logger import logger, request_id_context
-from ocr_image_preparation import enhance_ocr_crop
-from page_processing import detect_regions
-from qwen_ocr import QwenOCR, TABLE_OCR_PROMPT
-from table_detection import detect_table_regions, load_detector
+from qwen_ocr import JSON_DIR, OCR_PROMPT, TYPE_DESCRIPTIONS, QwenOCR
 
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 SUPPORTED_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
-OCR_OPTIONS = {"max_new_tokens": 2048, "max_time": 120.0}
-# Số vùng gửi OCR cùng lúc; vLLM tự gom các request đồng thời thành batch.
-OCR_WORKERS = 5  # nên bằng --max-num-seqs của vLLM
+OCR_OPTIONS = {"max_new_tokens": 3000, "max_time": 300.0}
+# Số trang OCR song song khi phải chạy từng trang; nên bằng --max-num-seqs của vLLM.
+OCR_WORKERS = 5
+# Phải bằng --max-model-len của vLLM. Ảnh + prompt + output phải nằm gọn trong context này.
+MAX_MODEL_LEN = int(os.getenv("QWEN_OCR_MAX_MODEL_LEN", "16384"))
+PIXELS_PER_TOKEN = 28 * 28  # Qwen-VL: mỗi token ảnh ~ một ô 28x28 pixel
+MIN_PAGE_PIXELS = 400_000   # dưới mức này chữ quá nhỏ, OCR không còn tin cậy
 
 
-@lru_cache(maxsize=1)
-def _detector():
-    """Nạp heron một lần cho cả tiến trình."""
-    return load_detector()
+def load_templates():
+    """json/<loại>.json → {loại: dict mẫu}."""
+    templates = {}
+    for kind in TYPE_DESCRIPTIONS:
+        with open(os.path.join(JSON_DIR, f"{kind}.json"), encoding="utf-8") as f:
+            templates[kind] = json.load(f)
+    return templates
 
 
 def _to_pil(image_bgr):
     return Image.fromarray(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB))
 
 
-def _ocr_all(engine, jobs):
-    """jobs: [(ảnh PIL, prompt hoặc None)] -> text theo đúng thứ tự, OCR song song."""
+def _plain(text):
+    """Bỏ dấu, chữ thường: dùng để so khớp loại giấy."""
+    text = unicodedata.normalize("NFD", str(text)).replace("đ", "d").replace("Đ", "D")
+    return "".join(c for c in text if not unicodedata.combining(c)).lower()
+
+
+def _parse_json(text):
+    """Lấy object JSON từ câu trả lời của model (bỏ ```json nếu có)."""
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end < start:
+        raise ValueError(f"Model không trả về JSON: {text[:200]!r}")
+    return json.loads(text[start:end + 1])
+
+
+def _empty(value):
+    return value is None or value == "" or (isinstance(value, str) and value.strip().lower() == "null")
+
+
+def _merge_value(template, values):
+    """Gộp các giá trị cùng một khóa của nhiều trang theo cấu trúc mẫu."""
+    if isinstance(template, dict):
+        dicts = [v for v in values if isinstance(v, dict)]
+        return {k: _merge_value(t, [d.get(k) for d in dicts]) for k, t in template.items()}
+    if isinstance(template, list):
+        merged, seen = [], set()
+        item_tpl = template[0] if template else None
+        for value in values:
+            for item in value if isinstance(value, list) else []:
+                if isinstance(item_tpl, dict) and isinstance(item, dict):
+                    item = _merge_value(item_tpl, [item])
+                    if all(_empty(v) for v in item.values()):
+                        continue
+                    key = (item.get("ho_ten") or json.dumps(item, ensure_ascii=False)).strip().lower()
+                elif _empty(item):
+                    continue
+                else:
+                    key = json.dumps(item, ensure_ascii=False).strip().lower()
+                if key not in seen:
+                    seen.add(key)
+                    merged.append(item)
+        return merged
+    return next((v for v in values if not _empty(v)), None)
+
+
+def _kind_of(result, templates):
+    """Loại giấy của một kết quả: theo loai_giay_to, không khớp thì theo số khóa trùng với mẫu."""
+    label = _plain(result.get("loai_giay_to") or "")
+    if "ho kinh doanh" in label:
+        return "ho_kinh_doanh"
+    if "doanh nghiep" in label:
+        return "doanh_nghiep"
+    return max(templates, key=lambda kind: len(set(result) & set(templates[kind])))
+
+
+def _merge_pages(results, templates):
+    """Gộp JSON của các trang thành một kết quả theo mẫu của loại xuất hiện nhiều nhất."""
+    kinds = [_kind_of(r, templates) for r in results]
+    kind = max(set(kinds), key=kinds.count)
+    merged = _merge_value(templates[kind], [r for r, k in zip(results, kinds) if k == kind])
+    merged["loai_giay_to"] = templates[kind]["loai_giay_to"]
+    return merged
+
+
+def _pixel_budget(pages):
+    """Tổng pixel cho mọi trang sao cho không vượt context; báo lỗi rõ nếu context quá nhỏ."""
+    prompt_tokens = len(OCR_PROMPT) // 2  # ước lượng dư (tiếng Việt + JSON)
+    image_tokens = MAX_MODEL_LEN - prompt_tokens - OCR_OPTIONS["max_new_tokens"] - 64 * pages - 256
+    total = image_tokens * PIXELS_PER_TOKEN
+    if total < MIN_PAGE_PIXELS * pages:
+        raise ValueError(
+            f"Context {MAX_MODEL_LEN} token không đủ cho {pages} trang (còn ~{max(image_tokens, 0)} token cho ảnh). "
+            f"Tăng --max-model-len của vLLM (và QWEN_OCR_MAX_MODEL_LEN) hoặc giảm max_new_tokens.")
+    return total
+
+
+def _ocr_pages_separately(engine, images, templates):
+    """Phương án dự phòng: mỗi trang một request (song song), rồi gộp JSON các trang."""
     request_id = request_id_context.get()
 
-    def ocr(job):
-        image, prompt = job
+    def ocr(image):
         request_id_context.set(request_id)  # ContextVar không tự sang thread của pool
-        options = OCR_OPTIONS if prompt is None else {**OCR_OPTIONS, "prompt": prompt}
-        return engine.ocr_image(image, **options)
+        return engine.ocr_images([image], OCR_PROMPT, **OCR_OPTIONS)
 
     with ThreadPoolExecutor(OCR_WORKERS) as pool:
-        return list(pool.map(ocr, jobs))
+        texts = list(pool.map(ocr, images))
+    results = []
+    for page, text in enumerate(texts, 1):
+        try:
+            results.append(_parse_json(text))
+        except ValueError as exc:
+            logger.warning(f"Trang {page}: bỏ qua, JSON lỗi ({exc})")
+    if not results:
+        raise ValueError("Không trang nào trả về JSON hợp lệ.")
+    return "\n\n".join(f"===== Trang {i} =====\n{t}" for i, t in enumerate(texts, 1)), _merge_pages(results, templates)
 
 
-def _read_regions(source, engine, largest_boxes):
-    """Mỗi trang: OCR từng vùng chữ (contour) và từng bảng, nối theo thứ tự đọc."""
-    pages = []
-    for page, (name, image) in enumerate(iter_images(source), 1):
-        text_blocks, table_blocks = detect_regions(image, _detector(), name,
-                                                   largest_boxes=largest_boxes)
-        blocks = [(b, None) for b in text_blocks] + [(b, TABLE_OCR_PROMPT) for b in table_blocks]
-        # Cùng độ cao thì đọc từ trái sang phải.
-        blocks.sort(key=lambda item: (item[0]["box"][1], item[0]["box"][0]))
-        texts = _ocr_all(engine, [(enhance_ocr_crop(_to_pil(b["crop"])), prompt)
-                                  for b, prompt in blocks])
-        pages.append({"page": page, "text": "\n\n".join(texts)})
-    return pages
-
-
-def _read_full_pages(source, engine):
-    """Mỗi trang: OCR một lần cả trang (đã che bảng, ảnh gốc), bảng OCR riêng nối phía sau."""
-    pages = []
-    for page, (_, image) in enumerate(iter_images(source), 1):
-        _, tables = detect_table_regions(image, _detector())
-        masked = image.copy()
-        for x1, y1, x2, y2 in (table["box"] for table in tables):
-            masked[y1:y2, x1:x2] = 255
-        logger.info(f"OCR toàn trang {page} (che {len(tables)} bảng)")
-        jobs = [(_to_pil(masked), None)] + [(enhance_ocr_crop(_to_pil(t["crop"])), TABLE_OCR_PROMPT)
-                                            for t in tables]
-        pages.append({"page": page, "text": "\n\n".join(_ocr_all(engine, jobs))})
-    return pages
+def extract(images, engine, templates):
+    """Ảnh PIL các trang của MỘT giấy → (câu trả lời thô, dict JSON)."""
+    if len(images) == 1:
+        text = engine.ocr_images(images, OCR_PROMPT, **OCR_OPTIONS)
+        return text, _merge_pages([_parse_json(text)], templates)
+    logger.info(f"OCR {len(images)} trang trong một request")
+    try:
+        text = engine.ocr_images(images, OCR_PROMPT, max_total_pixels=_pixel_budget(len(images)), **OCR_OPTIONS)
+        return text, _merge_pages([_parse_json(text)], templates)
+    except (RuntimeError, ValueError) as exc:
+        logger.warning(f"Request nhiều trang thất bại ({exc}); chuyển sang OCR từng trang rồi gộp")
+    return _ocr_pages_separately(engine, images, templates)
 
 
 def run_flow(source, engine=None, templates=None):
-    """OCR rồi trích xuất một file; kết quả ghi vào log và trả về dict."""
-    source = Path(source).expanduser().resolve()
-    request_token = request_id_context.set(source.name)  # idRequest trong log = tên file
+    """OCR một giấy (một file, hoặc danh sách file ảnh là các trang theo thứ tự); ghi log và trả về dict."""
+    sources = [Path(p).expanduser().resolve() for p in (source if isinstance(source, (list, tuple)) else [source])]
+    request_token = request_id_context.set(sources[0].name)  # idRequest trong log = tên file
     started = time.perf_counter()
     try:
-        if not source.is_file():
-            # Trong Docker: chỉ thấy file nằm trong thư mục đã mount (source/ = /app).
-            raise FileNotFoundError(f"Không tìm thấy file: {source}")
-        if source.suffix.lower() not in SUPPORTED_SUFFIXES:
-            raise ValueError(f"Đầu vào phải là file PDF hoặc ảnh: {source}")
-        logger.info(f"Bắt đầu xử lý {source}")
-        engine = engine or QwenOCR()
-        templates = templates or load_templates()
-
-        def checked(pages):
-            if not pages:
-                raise ValueError("Đầu vào không có ảnh/trang để xử lý.")
-            return pages
-
-        pages, extracted = adaptive_extract(
-            lambda limit: checked(_read_regions(source, engine, limit)),
-            lambda text: extract_text(text, templates),
-            lambda: checked(_read_full_pages(source, engine)),
-        )
-        if not any(page["text"].strip() for page in pages):
-            raise ValueError("Văn bản OCR rỗng; không thể trích xuất.")
-        logger.info(f"Xong {len(pages)} trang trong {time.perf_counter() - started:.3f} giây")
+        for path in sources:
+            if not path.is_file():
+                # Trong Docker: chỉ thấy file nằm trong thư mục đã mount.
+                raise FileNotFoundError(f"Không tìm thấy file: {path}")
+            if path.suffix.lower() not in SUPPORTED_SUFFIXES:
+                raise ValueError(f"Đầu vào phải là file PDF hoặc ảnh: {path}")
+        logger.info(f"Bắt đầu xử lý {', '.join(map(str, sources))}")
+        images = [_to_pil(image) for path in sources for _, image in iter_images(path)]
+        if not images:
+            raise ValueError("Đầu vào không có ảnh/trang để xử lý.")
+        text, extracted = extract(images, engine or QwenOCR(), templates or load_templates())
+        logger.info(f"Xong {len(images)} trang trong {time.perf_counter() - started:.3f} giây")
         logger.info("Kết quả trích xuất: %s", json.dumps(extracted, ensure_ascii=False))
-        return {"source": str(source), "pages": pages, "extracted": extracted}
+        return {"source": ", ".join(map(str, sources)), "pages": len(images), "text": text,
+                "extracted": extracted}
     except Exception:
-        logger.exception(f"Xử lý thất bại: {source}")
+        logger.exception(f"Xử lý thất bại: {', '.join(map(str, sources))}")
         raise
     finally:
         request_id_context.reset(request_token)
@@ -131,7 +194,7 @@ def run_batch(data_dir):
     for index, source in enumerate(files, 1):
         logger.info(f"[{index}/{len(files)}] {source.relative_to(data_dir)}")
         try:
-            pages += len(run_flow(source, engine, templates)["pages"])
+            pages += run_flow(source, engine, templates)["pages"]
         except Exception:  # noqa: BLE001 - đã ghi log trong run_flow, chạy tiếp file khác
             failed += 1
     logger.info(f"Tổng kết: {len(files)} file ({failed} lỗi), {pages} trang trong "
@@ -140,14 +203,17 @@ def run_batch(data_dir):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("source", type=Path, nargs="?", default=DEFAULT_DATA_DIR,
-                        help="File PDF/ảnh, hoặc thư mục để chạy batch (mặc định: ../data)")
-    source = parser.parse_args().source
-    if source.is_dir():
-        return 1 if run_batch(source) else 0
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("source", type=Path, nargs="*", default=[DEFAULT_DATA_DIR],
+                        help="File PDF/ảnh, thư mục để chạy batch (mặc định: ../data), "
+                             "hoặc nhiều ảnh là các trang của cùng một giấy")
+    sources = parser.parse_args().source
+    if len(sources) == 1 and sources[0].is_dir():
+        return 1 if run_batch(sources[0]) else 0
+    if any(p.is_dir() for p in sources):
+        parser.error("Khi truyền nhiều đầu vào, tất cả phải là file.")
     try:
-        run_flow(source)
+        run_flow(sources if len(sources) > 1 else sources[0])
     except Exception:  # noqa: BLE001 - lỗi đã ghi log trong run_flow
         return 1
     return 0

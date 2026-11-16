@@ -1,5 +1,3 @@
-torch==2.15.0
-transformers==5.22.1
 opencv-python-headless==5.0.0.93
 numpy==2.3.5
 pillow==13.0.0

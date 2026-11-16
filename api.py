@@ -11,9 +11,8 @@ import tempfile
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 
-from extract_info import load_templates
 from logger import logger
-from main import SUPPORTED_SUFFIXES, run_flow
+from main import SUPPORTED_SUFFIXES, load_templates, run_flow
 from qwen_ocr import QwenOCR
 
 app = FastAPI(title="OCR GPKD")
@@ -33,7 +32,7 @@ def health():
 # def (không async): run_flow chạy đồng bộ, FastAPI tự đưa vào threadpool.
 @app.post("/ocr")
 def ocr(file: UploadFile = File(...),
-        include_text: bool = Query(False, description="Trả kèm text OCR từng trang")):
+        include_text: bool = Query(False, description="Trả kèm câu trả lời thô của model")):
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in SUPPORTED_SUFFIXES:
         raise HTTPException(400, f"Định dạng không hỗ trợ: {suffix or '(không có đuôi)'}; "
@@ -51,7 +50,7 @@ def ocr(file: UploadFile = File(...),
             raise HTTPException(422, str(e)) from e
         except Exception as e:  # noqa: BLE001 - đã ghi log trong run_flow
             raise HTTPException(500, f"Xử lý thất bại: {e}") from e
-    body = {"filename": file.filename, "pages": len(result["pages"]), "extracted": result["extracted"]}
+    body = {"filename": file.filename, "pages": result["pages"], "extracted": result["extracted"]}
     if include_text:
-        body["text"] = [{"page": p["page"], "text": p["text"]} for p in result["pages"]]
+        body["text"] = result["text"]
     return body

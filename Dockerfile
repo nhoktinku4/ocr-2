@@ -6,12 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils \
 
 WORKDIR /app
 
-# torch từ PyPI trên Linux đã kèm CUDA runtime; chỉ cần driver NVIDIA + nvidia-container-toolkit
-# trên máy chủ. Không có GPU thì table_detection.py tự chạy CPU.
 RUN pip install --no-cache-dir \
     --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org \
-    torch==2.15.0 \
-    transformers==5.22.1 \
     opencv-python-headless==5.0.0.93 \
     numpy==2.3.5 \
     pillow==13.0.0 \

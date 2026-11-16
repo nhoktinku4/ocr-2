@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 from pdf2image import convert_from_path
 
-from ocr_image_preparation import MAX_PREPROCESS_PIXELS
+MAX_PREPROCESS_PIXELS = 40_000_000  # giới hạn khi render trang PDF
 
 
 def iter_pdf_images(pdf_path, dpi=300, max_pixels=MAX_PREPROCESS_PIXELS):

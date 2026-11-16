@@ -16,7 +16,7 @@ import sys
 
 def serve(args):
     import uvicorn
-    # 1 worker: engine OCR/heron nạp một lần; request song song chạy trong threadpool.
+    # 1 worker: engine OCR nạp một lần; request song song chạy trong threadpool.
     uvicorn.run("api:app", host=args.host, port=args.port, reload=args.reload)
 
 
@@ -52,7 +52,7 @@ def main():
     parser.add_argument("--port", type=int, default=int(os.getenv("API_PORT", "8002")))
     parser.add_argument("--reload", action="store_true", help="Server: tự nạp lại khi sửa code (dev)")
     parser.add_argument("--url", help="Client: địa chỉ API (mặc định http://127.0.0.1:<port>)")
-    parser.add_argument("--text", action="store_true", help="Client: trả kèm text OCR từng trang")
+    parser.add_argument("--text", action="store_true", help="Client: trả kèm câu trả lời thô của model")
     parser.add_argument("--timeout", type=float, default=600, help="Client: timeout mỗi file (giây)")
     args = parser.parse_args()
     if args.files:
