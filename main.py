@@ -306,11 +306,11 @@ def run_batch(data_dir, output_dir=DEFAULT_OUTPUT_DIR):
             pages += result["pages"]
             timings.append({"file": str(source.relative_to(data_dir)), "pages": result["pages"],
                             "seconds": result["seconds"]})
+            write_timings(output_dir, timings)  # ghi lại sau mỗi file: xem được khi batch đang chạy
         except Exception:  # noqa: BLE001 - đã ghi log trong run_flow, chạy tiếp file khác
             failed += 1
     logger.info(f"Tổng kết: {len(files)} file ({failed} lỗi), {pages} trang trong "
                 f"{time.perf_counter() - started:.3f} giây")
-    write_timings(output_dir, timings)
     return failed
 
 
