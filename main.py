@@ -258,15 +258,33 @@ def run_flow(source, output=None, engine=None, templates=None):
         (output / "response.txt").write_text(text + "\n", encoding="utf-8")
         (output / "extract.json").write_text(json.dumps(extracted, ensure_ascii=False, indent=2),
                                              encoding="utf-8")
-        logger.info(f"Xong {len(images)} trang trong {time.perf_counter() - started:.3f} giây")
+        seconds = time.perf_counter() - started
+        logger.info(f"Xong {len(images)} trang trong {seconds:.3f} giây")
         logger.info("Kết quả trích xuất: %s", json.dumps(extracted, ensure_ascii=False))
-        return {"source": ", ".join(map(str, sources)), "pages": len(images), "text": text,
+        return {"source": ", ".join(map(str, sources)), "pages": len(images), "seconds": round(seconds, 2), "text": text,
                 "extracted": extracted}
     except Exception:
         logger.exception(f"Xử lý thất bại: {', '.join(map(str, sources))}")
         raise
     finally:
         request_id_context.reset(request_token)
+
+
+def write_timings(output_dir, rows):
+    """Mỗi file 1 dòng: số trang, tổng giây, giây/trang; cuối: tổng, trung bình → <output>/timing_report.csv."""
+    if not rows:
+        return
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    total = sum(r["seconds"] for r in rows)
+    n_pages = sum(r["pages"] for r in rows)
+    with open(output_dir / "timing_report.csv", "w", encoding="utf-8-sig") as f:   # -sig: Excel đọc đúng
+        f.write("file,pages,seconds,seconds_per_page\n")
+        for r in rows:
+            f.write(f'"{r["file"]}",{r["pages"]},{r["seconds"]:.2f},{r["seconds"] / max(r["pages"], 1):.2f}\n')
+        f.write(f"\nTỔNG ({len(rows)} file),{n_pages},{total:.2f},{total / max(n_pages, 1):.2f}\n")
+        f.write(f"trung bình / file,,{total / len(rows):.2f},\n")
+        f.write(f"trung bình / trang,,{total / max(n_pages, 1):.2f},\n")
 
 
 def run_batch(data_dir, output_dir=DEFAULT_OUTPUT_DIR):
@@ -276,7 +294,7 @@ def run_batch(data_dir, output_dir=DEFAULT_OUTPUT_DIR):
                    if p.is_file() and p.suffix.lower() in SUPPORTED_SUFFIXES)
     logger.info(f"Tìm thấy {len(files)} file trong {data_dir}")
     engine, templates = QwenOCR(), load_templates()
-    failed, pages, started, used = 0, 0, time.perf_counter(), set()
+    failed, pages, started, used, timings = 0, 0, time.perf_counter(), set(), []
     for index, source in enumerate(files, 1):
         logger.info(f"[{index}/{len(files)}] {source.relative_to(data_dir)}")
         name, n = source.stem, 2                # trùng tên file ở thư mục con khác: thêm _2, _3...
@@ -284,11 +302,15 @@ def run_batch(data_dir, output_dir=DEFAULT_OUTPUT_DIR):
             name, n = f"{source.stem}_{n}", n + 1
         used.add(name)
         try:
-            pages += run_flow(source, Path(output_dir) / name, engine, templates)["pages"]
+            result = run_flow(source, Path(output_dir) / name, engine, templates)
+            pages += result["pages"]
+            timings.append({"file": str(source.relative_to(data_dir)), "pages": result["pages"],
+                            "seconds": result["seconds"]})
         except Exception:  # noqa: BLE001 - đã ghi log trong run_flow, chạy tiếp file khác
             failed += 1
     logger.info(f"Tổng kết: {len(files)} file ({failed} lỗi), {pages} trang trong "
                 f"{time.perf_counter() - started:.3f} giây")
+    write_timings(output_dir, timings)
     return failed
 
 
